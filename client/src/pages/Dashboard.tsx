@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { FileUpload } from '@/components/FileUpload';
 import { SummaryCards } from '@/components/SummaryCards';
+import { PLOverTimeChart } from '@/components/PLOverTimeChart';
+import { StrategyPerformanceChart } from '@/components/StrategyPerformanceChart';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
@@ -149,6 +151,11 @@ export default function Dashboard({ positions, transactions, rollChains, onFileU
       </div>
 
       <SummaryCards stats={summary} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <PLOverTimeChart positions={positions} />
+        <StrategyPerformanceChart positions={positions} />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>

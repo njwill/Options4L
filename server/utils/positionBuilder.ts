@@ -448,7 +448,7 @@ function convertToPosition(record: PositionRecord): Position {
   return {
     id: record.id,
     symbol: record.symbol,
-    strategyType: record.strategyType,
+    strategyType: record.strategyType as any,
     entryDate: record.entryDate,
     exitDate: record.exitDate,
     status: record.status,
