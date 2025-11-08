@@ -108,7 +108,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
                       </span>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {leg.quantity} contracts @ {formatCurrency(leg.price)} on {formatDate(leg.activityDate)}
+                      {leg.quantity} contracts @ {formatCurrency(Math.abs(leg.amount) / leg.quantity / 100)}
                     </div>
                   </div>
                   <div className="text-right">
