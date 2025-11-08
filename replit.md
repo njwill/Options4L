@@ -33,6 +33,18 @@ Preferred communication style: Simple, everyday language.
 - Tabular data presentation with sortable columns and pagination for large datasets
 - Filter bars with multi-criteria search (symbol, strategy type, status)
 - Modal/dialog-based detail views for deep-diving into positions and roll chains
+- Interactive charts for visual performance analysis (Recharts library)
+
+**Dashboard Visualizations:**
+- **P/L Over Time Chart** - Dual-line chart showing:
+  - Realized P/L (solid line): Cumulative profit/loss from closed positions over time
+  - Total P/L (dashed line): Realized + unrealized P/L including open positions
+  - Gap between lines represents current unrealized gains/losses from open positions
+  - Includes "current" snapshot point to show present-day total P/L
+- **Strategy Performance Chart** - Bar chart comparing total P/L across strategy types
+  - Color-coded bars (green for profits, red for losses)
+  - Sorted by performance (best to worst)
+  - Tooltips show count and average P/L per strategy
 
 ### Backend Architecture
 
