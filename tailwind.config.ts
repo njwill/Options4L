@@ -83,9 +83,12 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["var(--font-sans)"],
+        sans: ["IBM Plex Sans", "var(--font-sans)"],
         serif: ["var(--font-serif)"],
-        mono: ["var(--font-mono)"],
+        mono: ["IBM Plex Mono", "var(--font-mono)"],
+      },
+      fontFeatureSettings: {
+        'tnum': '"tnum"',
       },
       keyframes: {
         "accordion-down": {
