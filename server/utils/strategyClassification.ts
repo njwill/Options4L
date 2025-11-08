@@ -33,11 +33,38 @@ export function classifyStrategy(legs: OptionLeg[], stockHoldings?: number): Str
     }
   }
 
-  // Two leg strategies (vertical spreads)
+  // Two leg strategies
   if (legs.length === 2) {
     const sorted = [...legs].sort((a, b) => a.strike - b.strike);
     const [lower, higher] = sorted;
 
+    // Check for straddle (same strike, call and put)
+    if (lower.strike === higher.strike && lower.expiration === higher.expiration) {
+      const call = legs.find(l => l.optionType === 'Call');
+      const put = legs.find(l => l.optionType === 'Put');
+      
+      if (call && put) {
+        const bothLong = call.transCode === 'BTO' && put.transCode === 'BTO';
+        const bothShort = call.transCode === 'STO' && put.transCode === 'STO';
+        
+        if (bothLong) return 'Long Straddle';
+        if (bothShort) return 'Short Straddle';
+      }
+    }
+
+    // Check for strangle (different strikes, call and put)
+    const call = legs.find(l => l.optionType === 'Call');
+    const put = legs.find(l => l.optionType === 'Put');
+    
+    if (call && put && lower.expiration === higher.expiration && lower.strike !== higher.strike) {
+      const bothLong = call.transCode === 'BTO' && put.transCode === 'BTO';
+      const bothShort = call.transCode === 'STO' && put.transCode === 'STO';
+      
+      if (bothLong) return 'Long Strangle';
+      if (bothShort) return 'Short Strangle';
+    }
+
+    // Vertical spreads
     // Put Credit Spread (sell higher strike put, buy lower strike put)
     if (
       lower.optionType === 'Put' &&
@@ -80,6 +107,34 @@ export function classifyStrategy(legs: OptionLeg[], stockHoldings?: number): Str
       lower.expiration === higher.expiration
     ) {
       return 'Call Debit Spread';
+    }
+
+    // Calendar spread (same strike, different expiration, opposite directions)
+    if (lower.strike === higher.strike && lower.expiration !== higher.expiration) {
+      if (lower.optionType === higher.optionType) {
+        // Require one long and one short for a true calendar spread
+        const oneLongOneShort = 
+          (lower.transCode === 'BTO' && higher.transCode === 'STO') ||
+          (lower.transCode === 'STO' && higher.transCode === 'BTO');
+        
+        if (oneLongOneShort) {
+          return 'Calendar Spread';
+        }
+      }
+    }
+
+    // Diagonal spread (different strike and expiration, opposite directions)
+    if (lower.strike !== higher.strike && lower.expiration !== higher.expiration) {
+      if (lower.optionType === higher.optionType) {
+        // Require one long and one short for a true diagonal spread
+        const oneLongOneShort = 
+          (lower.transCode === 'BTO' && higher.transCode === 'STO') ||
+          (lower.transCode === 'STO' && higher.transCode === 'BTO');
+        
+        if (oneLongOneShort) {
+          return 'Diagonal Spread';
+        }
+      }
     }
   }
 
