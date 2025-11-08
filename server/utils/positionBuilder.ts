@@ -156,10 +156,11 @@ function matchClosingTransactions(
   closingTxns.forEach((txn) => {
     let direction: 'long' | 'short';
     
+    // CRITICAL: BTC closes SHORT positions (STO), STC closes LONG positions (BTO)
     if (txn.transCode === 'BTC') {
-      direction = 'long';
+      direction = 'short';  // BTC closes a position that was opened with STO (short)
     } else if (txn.transCode === 'STC') {
-      direction = 'short';
+      direction = 'long';   // STC closes a position that was opened with BTO (long)
     } else {
       // OEXP or OASGN - try both directions
       const longKey = `${txn.option.symbol}|${txn.option.expiration}|${txn.option.strike}|${txn.option.optionType}|long`;
