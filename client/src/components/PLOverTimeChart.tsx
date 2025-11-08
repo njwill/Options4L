@@ -23,12 +23,14 @@ export function PLOverTimeChart({ positions }: PLOverTimeChartProps) {
       const pl = position.realizedPL ?? position.netPL;
       cumulativeRealizedPL += pl;
       
+      // For historical points, totalPL equals realizedPL (no unrealized component yet)
+      // Unrealized P/L only applies to the current snapshot
       return {
         date: position.exitDate!,
         realizedPL: Number(cumulativeRealizedPL.toFixed(2)),
-        totalPL: Number((cumulativeRealizedPL + unrealizedPL).toFixed(2)),
+        totalPL: Number(cumulativeRealizedPL.toFixed(2)),
         positionPL: Number(pl.toFixed(2)),
-        unrealizedPL: Number(unrealizedPL.toFixed(2)),
+        unrealizedPL: 0,
         symbol: position.symbol,
         strategy: position.strategyType,
       };
