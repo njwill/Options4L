@@ -591,7 +591,8 @@ export function calculateSummary(positions: Position[]): SummaryStats {
   const closedPositions = positions.filter((p) => p.status === 'closed');
 
   const totalPL = positions.reduce((sum, p) => sum + p.netPL, 0);
-  const totalPremiumCollected = positions.reduce((sum, p) => sum + p.totalCredit, 0);
+  // Net premium = total credits + total debits (debits are already negative)
+  const totalPremiumCollected = positions.reduce((sum, p) => sum + p.totalCredit + p.totalDebit, 0);
 
   const wins = closedPositions.filter((p) => (p.realizedPL ?? p.netPL) > 0).length;
   const losses = closedPositions.filter((p) => (p.realizedPL ?? p.netPL) < 0).length;

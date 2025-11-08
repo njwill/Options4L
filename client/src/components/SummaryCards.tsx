@@ -47,11 +47,11 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
       testId: 'card-win-rate'
     },
     {
-      label: 'Premium Collected',
+      label: 'Net Premium',
       value: formatCurrency(stats.totalPremiumCollected),
       icon: TrendingUp,
       iconColor: 'text-chart-2',
-      valueColor: 'text-foreground',
+      valueColor: stats.totalPremiumCollected >= 0 ? 'text-green-600' : 'text-red-600',
       testId: 'card-premium-collected'
     },
   ];
