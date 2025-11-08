@@ -3,12 +3,14 @@ import { FileUpload } from '@/components/FileUpload';
 import { SummaryCards } from '@/components/SummaryCards';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StrategyBadge } from '@/components/StrategyBadge';
-import type { Position, Transaction } from '@shared/schema';
+import { PositionDetailPanel } from '@/components/PositionDetailPanel';
+import type { Position, Transaction, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 
 interface DashboardProps {
   positions: Position[];
   transactions: Transaction[];
+  rollChains: RollChain[];
   onFileUpload: (file: File) => Promise<void>;
   isProcessing: boolean;
   summary: {
@@ -22,7 +24,9 @@ interface DashboardProps {
   };
 }
 
-export default function Dashboard({ positions, transactions, onFileUpload, isProcessing, summary }: DashboardProps) {
+export default function Dashboard({ positions, transactions, rollChains, onFileUpload, isProcessing, summary }: DashboardProps) {
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -153,6 +157,7 @@ export default function Dashboard({ positions, transactions, onFileUpload, isPro
             data={recentPositions}
             columns={positionColumns}
             keyExtractor={(row) => row.id}
+            onRowClick={(row) => setSelectedPosition(row)}
             emptyMessage="No positions found"
             testId="table-recent-positions"
             pageSize={10}
@@ -171,6 +176,13 @@ export default function Dashboard({ positions, transactions, onFileUpload, isPro
           />
         </div>
       </div>
+
+      <PositionDetailPanel
+        position={selectedPosition}
+        rollChains={rollChains}
+        isOpen={selectedPosition !== null}
+        onClose={() => setSelectedPosition(null)}
+      />
     </div>
   );
 }

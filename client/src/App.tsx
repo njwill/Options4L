@@ -137,6 +137,7 @@ function App() {
               <Dashboard
                 positions={positions}
                 transactions={transactions}
+                rollChains={rollChains}
                 onFileUpload={handleFileUpload}
                 isProcessing={isProcessing}
                 summary={summary}
