@@ -1,4 +1,4 @@
-import type { Transaction, Position, OptionLeg, Roll, SummaryStats } from '@shared/schema';
+import type { Transaction, Position, OptionLeg, Roll, SummaryStats, RollChain, RollChainSegment } from '@shared/schema';
 import { randomUUID } from 'crypto';
 import { classifyStrategy, createOptionLeg } from './strategyClassification';
 import { detectRolls, createRollRecords } from './rollDetection';
@@ -49,7 +49,7 @@ interface AnomalyRecord {
   reason: string;
 }
 
-export function buildPositions(transactions: Transaction[]): { positions: Position[], rolls: Roll[] } {
+export function buildPositions(transactions: Transaction[]): { positions: Position[], rolls: Roll[], rollChains: RollChain[] } {
   const optionTxns = transactions.filter((t) => t.option.isOption && t.option.expiration && t.option.strike);
 
   const sortedTxns = [...optionTxns].sort((a, b) => {
@@ -89,11 +89,14 @@ export function buildPositions(transactions: Transaction[]): { positions: Positi
     );
   });
 
+  // Build roll chains
+  const rollChains = buildRollChains(positions, rolls, transactions);
+
   if (anomalies.length > 0) {
     console.warn(`Found ${anomalies.length} unmatched closing transactions:`, anomalies);
   }
 
-  return { positions, rolls };
+  return { positions, rolls, rollChains };
 }
 
 // Build leg ledgers from opening transactions
@@ -464,7 +467,116 @@ function convertToPosition(record: PositionRecord): Position {
     realizedPL,
     maxProfitableDebit,
     transactionIds: record.transactionIds,
+    rollChainId: null,
+    rolledFromPositionId: null,
+    rolledToPositionId: null,
   };
+}
+
+// Build roll chains by linking positions via their rolls
+function buildRollChains(positions: Position[], rolls: Roll[], transactions: Transaction[]): RollChain[] {
+  // Map transaction IDs to positions
+  const txnToPosition = new Map<string, Position>();
+  positions.forEach((pos) => {
+    pos.transactionIds.forEach((txnId) => {
+      txnToPosition.set(txnId, pos);
+    });
+  });
+
+  // Build position-to-position links via rolls
+  const positionLinks = new Map<string, { to: string | null, from: string | null }>();
+  positions.forEach((pos) => {
+    positionLinks.set(pos.id, { to: null, from: null });
+  });
+
+  rolls.forEach((roll) => {
+    const fromPos = txnToPosition.get(roll.fromLegId);
+    const toPos = txnToPosition.get(roll.toLegId);
+
+    if (fromPos && toPos && fromPos.id !== toPos.id) {
+      const fromLinks = positionLinks.get(fromPos.id)!;
+      const toLinks = positionLinks.get(toPos.id)!;
+      
+      fromLinks.to = toPos.id;
+      toLinks.from = fromPos.id;
+      
+      // Update position objects
+      fromPos.rolledToPositionId = toPos.id;
+      toPos.rolledFromPositionId = fromPos.id;
+    }
+  });
+
+  // Find chain heads (positions with no "from" link)
+  const chainHeads = positions.filter((pos) => {
+    const links = positionLinks.get(pos.id);
+    return links && links.from === null && links.to !== null;
+  });
+
+  // Build chains
+  const chains: RollChain[] = [];
+  const assignedPositions = new Set<string>();
+
+  chainHeads.forEach((headPos) => {
+    const chainId = randomUUID();
+    const segments: RollChainSegment[] = [];
+    let currentPos: Position | null = headPos;
+    let totalCredits = 0;
+    let totalDebits = 0;
+
+    while (currentPos) {
+      // Mark as part of chain
+      currentPos.rollChainId = chainId;
+      assignedPositions.add(currentPos.id);
+
+      // Add credits and debits
+      totalCredits += Math.max(0, currentPos.netPL);
+      totalDebits += Math.max(0, -currentPos.netPL);
+
+      // Create segment
+      const links = positionLinks.get(currentPos.id);
+      const nextPosId = links?.to;
+      const rollDate = nextPosId ? 
+        rolls.find(r => 
+          txnToPosition.get(r.fromLegId)?.id === currentPos!.id && 
+          txnToPosition.get(r.toLegId)?.id === nextPosId
+        )?.rollDate ?? null : null;
+
+      segments.push({
+        positionId: currentPos.id,
+        rollDate,
+        netCredit: currentPos.netPL,
+        fromExpiration: links && links.from ? 
+          positions.find(p => p.id === links.from)?.legs[0]?.expiration ?? null : null,
+        toExpiration: currentPos.legs[0]?.expiration ?? '',
+        fromStrike: links && links.from ? 
+          positions.find(p => p.id === links.from)?.legs[0]?.strike ?? null : null,
+        toStrike: currentPos.legs[0]?.strike ?? 0,
+      });
+
+      // Move to next position
+      currentPos = nextPosId ? positions.find(p => p.id === nextPosId) ?? null : null;
+    }
+
+    // Create chain
+    const firstPos = headPos;
+    const lastPos = positions.find(p => p.id === segments[segments.length - 1].positionId)!;
+
+    chains.push({
+      chainId,
+      symbol: firstPos.symbol,
+      strategyType: firstPos.strategyType,
+      segments,
+      totalCredits,
+      totalDebits,
+      netPL: totalCredits - totalDebits,
+      rollCount: segments.length - 1,
+      firstEntryDate: firstPos.entryDate,
+      lastExitDate: lastPos.exitDate,
+      status: lastPos.status,
+    });
+  });
+
+  return chains;
 }
 
 export function calculateSummary(positions: Position[]): SummaryStats {

@@ -22,7 +22,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transactions = consolidateTransactions(rawTransactions);
 
       // Step 3: Build positions and detect rolls
-      const { positions, rolls } = buildPositions(transactions);
+      const { positions, rolls, rollChains } = buildPositions(transactions);
 
       // Step 4: Calculate summary statistics
       const summary = calculateSummary(positions);
@@ -55,6 +55,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: `Successfully processed ${transactions.length} transactions and identified ${positions.length} positions`,
         transactions,
         positions,
+        rollChains,
         summary,
       });
 

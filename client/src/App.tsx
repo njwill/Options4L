@@ -10,7 +10,7 @@ import Dashboard from '@/pages/Dashboard';
 import OpenPositions from '@/pages/OpenPositions';
 import ClosedPositions from '@/pages/ClosedPositions';
 import TransactionHistory from '@/pages/TransactionHistory';
-import type { Position, Transaction, SummaryStats } from '@shared/schema';
+import type { Position, Transaction, SummaryStats, RollChain } from '@shared/schema';
 
 type TabType = 'dashboard' | 'open' | 'closed' | 'transactions';
 
@@ -18,6 +18,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [positions, setPositions] = useState<Position[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [rollChains, setRollChains] = useState<RollChain[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [summary, setSummary] = useState<SummaryStats>({
     totalPL: 0,
@@ -47,6 +48,7 @@ function App() {
       const data = await response.json();
       setPositions(data.positions);
       setTransactions(data.transactions);
+      setRollChains(data.rollChains || []);
       setSummary(data.summary);
       setActiveTab('dashboard');
     } catch (error) {
@@ -140,8 +142,8 @@ function App() {
                 summary={summary}
               />
             )}
-            {activeTab === 'open' && <OpenPositions positions={positions} />}
-            {activeTab === 'closed' && <ClosedPositions positions={positions} />}
+            {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} />}
+            {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} />}
             {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
           </main>
         </div>

@@ -6,17 +6,22 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { StrategyBadge } from './StrategyBadge';
-import type { Position } from '@shared/schema';
+import { RollChainTimeline } from './RollChainTimeline';
+import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 
 interface PositionDetailPanelProps {
   position: Position | null;
+  rollChains: RollChain[];
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function PositionDetailPanel({ position, isOpen, onClose }: PositionDetailPanelProps) {
+export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: PositionDetailPanelProps) {
   if (!position) return null;
+
+  // Find the roll chain this position belongs to
+  const chain = position.rollChainId ? rollChains.find(c => c.chainId === position.rollChainId) : null;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -119,8 +124,16 @@ export function PositionDetailPanel({ position, isOpen, onClose }: PositionDetai
             </div>
           </div>
 
-          {/* Rolls */}
-          {position.rolls.length > 0 && (
+          {/* Roll Chain Timeline */}
+          {chain && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Complete Roll Chain</h3>
+              <RollChainTimeline chain={chain} />
+            </div>
+          )}
+
+          {/* Individual Position Rolls */}
+          {position.rolls.length > 0 && !chain && (
             <div>
               <h3 className="text-lg font-semibold mb-4">Roll History</h3>
               <div className="space-y-2">

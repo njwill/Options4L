@@ -5,14 +5,15 @@ import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
 import { Button } from '@/components/ui/button';
 import { Eye, TrendingUp, TrendingDown } from 'lucide-react';
-import type { Position } from '@shared/schema';
+import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 
 interface ClosedPositionsProps {
   positions: Position[];
+  rollChains: RollChain[];
 }
 
-export default function ClosedPositions({ positions }: ClosedPositionsProps) {
+export default function ClosedPositions({ positions, rollChains }: ClosedPositionsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
@@ -174,6 +175,7 @@ export default function ClosedPositions({ positions }: ClosedPositionsProps) {
 
       <PositionDetailPanel
         position={selectedPosition}
+        rollChains={rollChains}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
       />

@@ -124,6 +124,36 @@ export const rollSchema = z.object({
 
 export type Roll = z.infer<typeof rollSchema>;
 
+// Roll chain segment (one hop in a roll chain)
+export const rollChainSegmentSchema = z.object({
+  positionId: z.string(),
+  rollDate: z.string().nullable(),
+  netCredit: z.number(), // Net credit/debit for this hop (positive = credit received)
+  fromExpiration: z.string().nullable(),
+  toExpiration: z.string(),
+  fromStrike: z.number().nullable(),
+  toStrike: z.number(),
+});
+
+export type RollChainSegment = z.infer<typeof rollChainSegmentSchema>;
+
+// Roll chain metadata (aggregated across all rolls in a chain)
+export const rollChainSchema = z.object({
+  chainId: z.string(),
+  symbol: z.string(),
+  strategyType: StrategyTypeEnum,
+  segments: z.array(rollChainSegmentSchema), // Ordered chronologically
+  totalCredits: z.number(),
+  totalDebits: z.number(),
+  netPL: z.number(),
+  rollCount: z.number(),
+  firstEntryDate: z.string(),
+  lastExitDate: z.string().nullable(),
+  status: z.enum(['open', 'closed']),
+});
+
+export type RollChain = z.infer<typeof rollChainSchema>;
+
 // Position (a complete trading position, potentially multi-leg)
 export const positionSchema = z.object({
   id: z.string(),
@@ -140,6 +170,9 @@ export const positionSchema = z.object({
   realizedPL: z.number().nullable(),
   maxProfitableDebit: z.number().nullable(), // How much debit can be taken while staying profitable
   transactionIds: z.array(z.string()),
+  rollChainId: z.string().nullable(), // Links to roll chain if part of one
+  rolledFromPositionId: z.string().nullable(), // Previous position in chain
+  rolledToPositionId: z.string().nullable(), // Next position in chain
 });
 
 export type Position = z.infer<typeof positionSchema>;
@@ -163,6 +196,7 @@ export const uploadResponseSchema = z.object({
   message: z.string(),
   transactions: z.array(transactionSchema),
   positions: z.array(positionSchema),
+  rollChains: z.array(rollChainSchema),
   summary: summaryStatsSchema,
 });
 
