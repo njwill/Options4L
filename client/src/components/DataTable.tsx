@@ -6,6 +6,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft } from 'lucide-react';
@@ -27,6 +28,7 @@ interface DataTableProps<T> {
   pageSize?: number;
   testId?: string;
   onRowClick?: (row: T) => void;
+  footer?: React.ReactNode[];
 }
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -39,6 +41,7 @@ export function DataTable<T>({
   pageSize = 50,
   testId = 'data-table',
   onRowClick,
+  footer,
 }: DataTableProps<T>) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
@@ -159,6 +162,20 @@ export function DataTable<T>({
                 </TableRow>
               ))}
             </TableBody>
+            {footer && footer.length > 0 && (
+              <TableFooter>
+                <TableRow className="hover:bg-transparent font-semibold">
+                  {footer.map((cell, index) => (
+                    <TableCell
+                      key={index}
+                      className={`py-3 ${columns[index]?.className || ''}`}
+                    >
+                      {cell}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </div>
       </div>

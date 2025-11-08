@@ -146,6 +146,31 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
     setSymbolFilter('all');
   };
 
+  // Calculate totals for the footer
+  const totals = useMemo(() => {
+    const totalCredit = filteredPositions.reduce((sum, p) => sum + p.totalCredit, 0);
+    const totalDebit = filteredPositions.reduce((sum, p) => sum + p.totalDebit, 0);
+    const netPL = filteredPositions.reduce((sum, p) => sum + p.netPL, 0);
+
+    return {
+      totalCredit,
+      totalDebit,
+      netPL,
+    };
+  }, [filteredPositions]);
+
+  const footer = [
+    <span className="font-semibold">Totals</span>,
+    '',
+    '',
+    <span className="tabular-nums text-green-600">{formatCurrency(totals.totalCredit)}</span>,
+    <span className="tabular-nums text-red-600">{formatCurrency(Math.abs(totals.totalDebit))}</span>,
+    <span className={`font-semibold tabular-nums ${totals.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+      {formatCurrency(totals.netPL)}
+    </span>,
+    '',
+  ];
+
   return (
     <div className="space-y-8">
       <div>
@@ -176,6 +201,7 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
         onRowClick={(row) => setSelectedPosition(row)}
         emptyMessage="No open positions found"
         testId="table-open-positions"
+        footer={footer}
       />
 
       <PositionDetailPanel
