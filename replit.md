@@ -36,6 +36,11 @@ Preferred communication style: Simple, everyday language.
 - Interactive charts for visual performance analysis (Recharts library)
 
 **Dashboard Visualizations:**
+- **Summary Cards** - Four key metrics:
+  - Total P/L (realized + unrealized): Overall portfolio performance including open positions
+  - Open Positions: Count of currently active trades
+  - Win Rate: Percentage of profitable closed trades with W/L ratio
+  - Total P/L (realized): Locked-in profits/losses from closed positions only
 - **P/L Over Time Chart** - Dual-line chart showing:
   - Realized P/L (solid line): Cumulative profit/loss from closed positions over time
   - Total P/L (dashed line): Realized + unrealized P/L including open positions
