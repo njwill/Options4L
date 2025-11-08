@@ -180,6 +180,7 @@ export type Position = z.infer<typeof positionSchema>;
 // Summary statistics
 export const summaryStatsSchema = z.object({
   totalPL: z.number(),
+  realizedPL: z.number(),
   openPositionsCount: z.number(),
   closedPositionsCount: z.number(),
   totalPremiumCollected: z.number(),

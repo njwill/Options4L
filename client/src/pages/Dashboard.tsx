@@ -6,7 +6,7 @@ import { StrategyPerformanceChart } from '@/components/StrategyPerformanceChart'
 import { DataTable, type Column } from '@/components/DataTable';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
-import type { Position, Transaction, RollChain } from '@shared/schema';
+import type { Position, Transaction, RollChain, SummaryStats } from '@shared/schema';
 import { format } from 'date-fns';
 
 interface DashboardProps {
@@ -15,15 +15,7 @@ interface DashboardProps {
   rollChains: RollChain[];
   onFileUpload: (file: File) => Promise<void>;
   isProcessing: boolean;
-  summary: {
-    totalPL: number;
-    openPositionsCount: number;
-    closedPositionsCount: number;
-    totalPremiumCollected: number;
-    winRate: number;
-    totalWins: number;
-    totalLosses: number;
-  };
+  summary: SummaryStats;
 }
 
 export default function Dashboard({ positions, transactions, rollChains, onFileUpload, isProcessing, summary }: DashboardProps) {

@@ -591,6 +591,8 @@ export function calculateSummary(positions: Position[]): SummaryStats {
   const closedPositions = positions.filter((p) => p.status === 'closed');
 
   const totalPL = positions.reduce((sum, p) => sum + p.netPL, 0);
+  const realizedPL = closedPositions.reduce((sum, p) => sum + (p.realizedPL ?? p.netPL), 0);
+  
   // Net premium = total credits + total debits from OPTIONS positions only (exclude stock)
   const optionsPositions = positions.filter((p) => p.strategyType !== 'Long Stock' && p.strategyType !== 'Short Stock');
   const totalPremiumCollected = optionsPositions.reduce((sum, p) => sum + p.totalCredit + p.totalDebit, 0);
@@ -601,6 +603,7 @@ export function calculateSummary(positions: Position[]): SummaryStats {
 
   return {
     totalPL,
+    realizedPL,
     openPositionsCount: openPositions.length,
     closedPositionsCount: closedPositions.length,
     totalPremiumCollected,

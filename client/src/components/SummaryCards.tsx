@@ -22,7 +22,7 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
 
   const cards = [
     {
-      label: 'Total P/L',
+      label: 'Total P/L (realized + unrealized)',
       value: formatCurrency(stats.totalPL),
       icon: stats.totalPL >= 0 ? TrendingUp : TrendingDown,
       iconColor: stats.totalPL >= 0 ? 'text-green-600' : 'text-red-600',
@@ -47,12 +47,12 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
       testId: 'card-win-rate'
     },
     {
-      label: 'Net Premium',
-      value: formatCurrency(stats.totalPremiumCollected),
-      icon: TrendingUp,
-      iconColor: 'text-chart-2',
-      valueColor: stats.totalPremiumCollected >= 0 ? 'text-green-600' : 'text-red-600',
-      testId: 'card-premium-collected'
+      label: 'Total P/L (realized)',
+      value: formatCurrency(stats.realizedPL),
+      icon: stats.realizedPL >= 0 ? TrendingUp : TrendingDown,
+      iconColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
+      valueColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
+      testId: 'card-realized-pl'
     },
   ];
 
