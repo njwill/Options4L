@@ -29,11 +29,13 @@ export function detectRolls(transactions: Transaction[]): RollMatch[] {
 
     closingTxns.forEach((closeTxn) => {
       // Determine expected opening type based on closing type
-      const expectedOpeningCode = closeTxn.transCode === 'BTC' ? 'BTO' : 'STO';
+      // BTC closes SHORT positions (STO), so we reopen with STO
+      // STC closes LONG positions (BTO), so we reopen with BTO
+      const expectedOpeningCode = closeTxn.transCode === 'BTC' ? 'STO' : 'BTO';
       
       // Find matching opening transaction
       const matchingOpen = openingTxns.find((openTxn) => {
-        // Must be the correct opening type (BTC→BTO, STC→STO)
+        // Must be the correct opening type (BTC→STO, STC→BTO)
         const correctType = openTxn.transCode === expectedOpeningCode;
         // Same option type (Call/Put)
         const sameOptionType = closeTxn.option.optionType === openTxn.option.optionType;
