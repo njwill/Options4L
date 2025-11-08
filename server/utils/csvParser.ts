@@ -34,7 +34,7 @@ function parseCSV(buffer: Buffer): Promise<RawTransaction[]> {
         }));
         resolve(transactions);
       },
-      error: (error) => {
+      error: (error: Error) => {
         reject(error);
       },
     });
@@ -108,8 +108,8 @@ function parsePrice(priceStr: string): number {
 
 function parseQuantity(qtyStr: string): number {
   if (!qtyStr) return 0;
-  // Handle 'S' suffix for short positions
-  const cleaned = qtyStr.replace(/S$/, '');
+  // Strip any trailing letters (S for Short, L for Long, etc.)
+  const cleaned = qtyStr.replace(/[A-Za-z]+$/, '');
   return parseFloat(cleaned) || 0;
 }
 
