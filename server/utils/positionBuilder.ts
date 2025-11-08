@@ -535,13 +535,35 @@ function buildRollChains(positions: Position[], rolls: Roll[], transactions: Tra
       currentPos.rollChainId = chainId;
       assignedPositions.add(currentPos.id);
 
-      // Add credits and debits
-      totalCredits += Math.max(0, currentPos.netPL);
-      totalDebits += Math.max(0, -currentPos.netPL);
-
       // Create segment
       const links = positionLinks.get(currentPos.id);
       const nextPosId = links?.to;
+      const prevPosId = links?.from;
+      
+      // Calculate segment P/L
+      let segmentPL: number;
+      
+      if (!prevPosId) {
+        // This is the INITIAL position in the chain
+        // Calculate P/L from only OPENING transactions (exclude closing transactions that rolled it)
+        const positionTxns = transactions.filter(t => currentPos!.transactionIds.includes(t.id));
+        const openingTxns = positionTxns.filter(t => t.transCode === 'STO' || t.transCode === 'BTO');
+        segmentPL = openingTxns.reduce((sum, t) => sum + t.amount, 0);
+      } else {
+        // This is a ROLLED position
+        // Find the roll that brought us to this position
+        const roll = rolls.find(r => 
+          txnToPosition.get(r.fromLegId)?.id === prevPosId &&
+          txnToPosition.get(r.toLegId)?.id === currentPos!.id
+        );
+        // Use the roll's netCredit (which is close previous + open new)
+        segmentPL = roll?.netCredit ?? currentPos.netPL;
+      }
+
+      // Add to totals
+      totalCredits += Math.max(0, segmentPL);
+      totalDebits += Math.max(0, -segmentPL);
+      
       const rollDate = nextPosId ? 
         rolls.find(r => 
           txnToPosition.get(r.fromLegId)?.id === currentPos!.id && 
@@ -551,7 +573,7 @@ function buildRollChains(positions: Position[], rolls: Roll[], transactions: Tra
       segments.push({
         positionId: currentPos.id,
         rollDate,
-        netCredit: currentPos.netPL,
+        netCredit: segmentPL,
         fromExpiration: links && links.from ? 
           positions.find(p => p.id === links.from)?.legs[0]?.expiration ?? null : null,
         toExpiration: currentPos.legs[0]?.expiration ?? '',
