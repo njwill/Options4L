@@ -3,8 +3,10 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
+import { Badge } from '@/components/ui/badge';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
+import { Link2 } from 'lucide-react';
 
 interface OpenPositionsProps {
   positions: Position[];
@@ -53,6 +55,12 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
     } catch {
       return dateStr;
     }
+  };
+
+  // Helper to find roll chain for a position
+  const getRollChainForPosition = (position: Position): RollChain | null => {
+    if (!position.rollChainId) return null;
+    return rollChains.find((chain) => chain.chainId === position.rollChainId) || null;
   };
 
   const columns: Column<Position>[] = [
@@ -104,14 +112,30 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
       className: 'text-right',
     },
     {
-      key: 'maxDebit',
-      header: 'Max Profitable Debit',
-      accessor: (row) => (
-        <span className="tabular-nums">
-          {row.maxProfitableDebit !== null ? formatCurrency(Math.abs(row.maxProfitableDebit)) : 'N/A'}
-        </span>
-      ),
-      sortValue: (row) => row.maxProfitableDebit ?? 0,
+      key: 'rollChain',
+      header: 'Roll Chain',
+      accessor: (row) => {
+        const chain = getRollChainForPosition(row);
+        if (!chain) {
+          return <span className="text-muted-foreground">-</span>;
+        }
+        
+        return (
+          <div className="flex items-center gap-2" data-testid={`rollchain-${row.id}`}>
+            <Badge variant="outline" className="gap-1">
+              <Link2 className="w-3 h-3" />
+              Rolled ({chain.rollCount})
+            </Badge>
+            <span className={`tabular-nums font-medium ${chain.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(chain.netPL)}
+            </span>
+          </div>
+        );
+      },
+      sortValue: (row) => {
+        const chain = getRollChainForPosition(row);
+        return chain ? chain.netPL : 0;
+      },
       className: 'text-right',
     },
   ];
