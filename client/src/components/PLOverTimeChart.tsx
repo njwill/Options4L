@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Card } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { Position } from '@shared/schema';
 import { format } from 'date-fns';
 
@@ -14,19 +14,50 @@ export function PLOverTimeChart({ positions }: PLOverTimeChartProps) {
       .filter((p) => p.status === 'closed' && p.exitDate)
       .sort((a, b) => new Date(a.exitDate!).getTime() - new Date(b.exitDate!).getTime());
 
-    let cumulativePL = 0;
-    return closedPositions.map((position) => {
+    // Calculate total unrealized P/L from open positions
+    const openPositions = positions.filter((p) => p.status === 'open');
+    const unrealizedPL = openPositions.reduce((sum, p) => sum + p.netPL, 0);
+
+    let cumulativeRealizedPL = 0;
+    const dataPoints = closedPositions.map((position) => {
       const pl = position.realizedPL ?? position.netPL;
-      cumulativePL += pl;
+      cumulativeRealizedPL += pl;
       
       return {
         date: position.exitDate!,
-        cumulativePL: Number(cumulativePL.toFixed(2)),
+        realizedPL: Number(cumulativeRealizedPL.toFixed(2)),
+        totalPL: Number((cumulativeRealizedPL + unrealizedPL).toFixed(2)),
         positionPL: Number(pl.toFixed(2)),
+        unrealizedPL: Number(unrealizedPL.toFixed(2)),
         symbol: position.symbol,
         strategy: position.strategyType,
       };
     });
+
+    // Add a "current" data point to show total P/L including unrealized from open positions
+    // This ensures the total P/L line extends to show current unrealized gains
+    if (openPositions.length > 0) {
+      // Use today's date or the most recent open position entry date
+      const mostRecentOpenDate = openPositions.reduce((latest, p) => {
+        const entryDate = new Date(p.entryDate);
+        return entryDate > latest ? entryDate : latest;
+      }, new Date(0));
+
+      const currentDate = new Date();
+      const displayDate = currentDate > mostRecentOpenDate ? currentDate : mostRecentOpenDate;
+
+      dataPoints.push({
+        date: displayDate.toISOString().split('T')[0],
+        realizedPL: Number(cumulativeRealizedPL.toFixed(2)),
+        totalPL: Number((cumulativeRealizedPL + unrealizedPL).toFixed(2)),
+        positionPL: 0,
+        unrealizedPL: Number(unrealizedPL.toFixed(2)),
+        symbol: 'Open Positions',
+        strategy: 'Current Unrealized' as any,
+      });
+    }
+
+    return dataPoints;
   }, [positions]);
 
   const formatCurrency = (value: number) => {
@@ -87,21 +118,57 @@ export function PLOverTimeChart({ positions }: PLOverTimeChartProps) {
                     <p className={`text-sm font-semibold ${data.positionPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       Trade: {formatCurrency(data.positionPL)}
                     </p>
-                    <p className={`text-sm font-semibold ${data.cumulativePL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      Total: {formatCurrency(data.cumulativePL)}
-                    </p>
+                    <div className="border-t mt-2 pt-2 space-y-1">
+                      <p className={`text-sm font-semibold ${data.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        Realized: {formatCurrency(data.realizedPL)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Unrealized: {formatCurrency(data.unrealizedPL)}
+                      </p>
+                      <p className={`text-sm font-semibold ${data.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        Total: {formatCurrency(data.totalPL)}
+                      </p>
+                    </div>
                   </div>
                 );
               }
               return null;
             }}
           />
+          <Legend 
+            verticalAlign="top" 
+            height={36}
+            content={({ payload }) => (
+              <div className="flex justify-center gap-6 pb-2 text-sm">
+                {payload?.map((entry, index) => (
+                  <div key={`legend-${index}`} className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full" 
+                      style={{ backgroundColor: entry.color }}
+                    />
+                    <span className="text-muted-foreground">{entry.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          />
           <Line
             type="monotone"
-            dataKey="cumulativePL"
+            dataKey="realizedPL"
+            name="Realized P/L"
             stroke="hsl(var(--primary))"
             strokeWidth={2}
             dot={{ fill: 'hsl(var(--primary))', r: 3 }}
+            activeDot={{ r: 5 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="totalPL"
+            name="Total P/L (Realized + Unrealized)"
+            stroke="hsl(var(--chart-2))"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={{ fill: 'hsl(var(--chart-2))', r: 3 }}
             activeDot={{ r: 5 }}
           />
         </LineChart>
