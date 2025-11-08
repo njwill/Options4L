@@ -30,6 +30,14 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
       testId: 'card-total-pl'
     },
     {
+      label: 'Total P/L (realized)',
+      value: formatCurrency(stats.realizedPL),
+      icon: stats.realizedPL >= 0 ? TrendingUp : TrendingDown,
+      iconColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
+      valueColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
+      testId: 'card-realized-pl'
+    },
+    {
       label: 'Open Positions',
       value: stats.openPositionsCount.toString(),
       icon: Target,
@@ -45,14 +53,6 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
       iconColor: 'text-chart-1',
       valueColor: 'text-foreground',
       testId: 'card-win-rate'
-    },
-    {
-      label: 'Total P/L (realized)',
-      value: formatCurrency(stats.realizedPL),
-      icon: stats.realizedPL >= 0 ? TrendingUp : TrendingDown,
-      iconColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
-      valueColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
-      testId: 'card-realized-pl'
     },
   ];
 
