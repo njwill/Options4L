@@ -22,23 +22,32 @@ export function detectRolls(transactions: Transaction[]): RollMatch[] {
     byDateSymbol.get(key)!.push(txn);
   });
 
-  // Look for BTC/STC + STO patterns on the same day
+  // Look for closing + opening patterns on the same day
   byDateSymbol.forEach((txns, key) => {
     const closingTxns = txns.filter((t) => t.transCode === 'BTC' || t.transCode === 'STC');
-    const openingTxns = txns.filter((t) => t.transCode === 'STO');
+    const openingTxns = txns.filter((t) => t.transCode === 'STO' || t.transCode === 'BTO'); // Include BTO!
 
     closingTxns.forEach((closeTxn) => {
+      // Determine expected opening type based on closing type
+      const expectedOpeningCode = closeTxn.transCode === 'BTC' ? 'BTO' : 'STO';
+      
       // Find matching opening transaction
       const matchingOpen = openingTxns.find((openTxn) => {
-        // Same symbol, same option type (Call/Put)
-        const sameType = closeTxn.option.optionType === openTxn.option.optionType;
+        // Must be the correct opening type (BTC→BTO, STC→STO)
+        const correctType = openTxn.transCode === expectedOpeningCode;
+        // Same option type (Call/Put)
+        const sameOptionType = closeTxn.option.optionType === openTxn.option.optionType;
         // Same quantity (or close enough)
         const sameQty = Math.abs(closeTxn.quantity - openTxn.quantity) < 1;
+        // Different expiration OR different strike (roll criteria)
+        const isDifferent = 
+          closeTxn.option.expiration !== openTxn.option.expiration ||
+          closeTxn.option.strike !== openTxn.option.strike;
         
-        return sameType && sameQty;
+        return correctType && sameOptionType && sameQty && isDifferent;
       });
 
-      if (matchingOpen && closeTxn.option.expiration !== matchingOpen.option.expiration) {
+      if (matchingOpen) {
         // This is a roll!
         rolls.push({
           closeTransactions: [closeTxn],
@@ -57,7 +66,8 @@ export function createRollRecords(rollMatches: RollMatch[]): Roll[] {
     const closeTxn = match.closeTransactions[0];
     const openTxn = match.openTransactions[0];
 
-    const netCredit = openTxn.amount + closeTxn.amount; // STO is positive, BTC is negative
+    // Calculate net credit: opening credits minus closing debits
+    const netCredit = openTxn.amount + closeTxn.amount;
 
     return {
       id: randomUUID(),

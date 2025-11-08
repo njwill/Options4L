@@ -104,6 +104,8 @@ function buildLegLedgers(openingTxns: Transaction[]): Map<string, LegLedger> {
     const direction = txn.transCode === 'BTO' ? 'long' : 'short';
     const legKey = `${txn.option.symbol}|${txn.option.expiration}|${txn.option.strike}|${txn.option.optionType}|${direction}`;
 
+    console.log(`[OPEN] Key: ${legKey}, Date: ${txn.activityDate}, Qty: ${txn.quantity}, Code: ${txn.transCode}`);
+
     if (!legLedgerMap.has(legKey)) {
       legLedgerMap.set(legKey, {
         legId: randomUUID(),
@@ -179,7 +181,10 @@ function matchClosingTransactions(
     const legKey = `${txn.option.symbol}|${txn.option.expiration}|${txn.option.strike}|${txn.option.optionType}|${direction}`;
     const leg = legLedgerMap.get(legKey);
 
+    console.log(`[CLOSE] Key: ${legKey}, Date: ${txn.activityDate}, Qty: ${txn.quantity}, Code: ${txn.transCode}, Found: ${!!leg}`);
+
     if (!leg) {
+      console.log(`[CLOSE] FAILED TO MATCH. Available keys:`, Array.from(legLedgerMap.keys()).filter(k => k.startsWith(txn.option.symbol)));
       anomalies.push({
         transaction: txn,
         reason: 'No matching open leg found',
@@ -214,6 +219,8 @@ function matchClosingTransactions(
 
     leg.remainingQuantity -= txn.quantity - remainingToClose;
     leg.lastCloseDate = txn.activityDate;
+
+    console.log(`[CLOSE] Updated leg remainingQty: ${leg.remainingQuantity}, Closed: ${leg.remainingQuantity <= 0}`);
 
     if (remainingToClose > 0) {
       anomalies.push({
