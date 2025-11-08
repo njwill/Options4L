@@ -506,17 +506,31 @@ function buildRollChains(positions: Position[], rolls: Roll[], transactions: Tra
     }
   });
 
-  // Find chain heads (positions with no "from" link)
-  const chainHeads = positions.filter((pos) => {
+  // Find all positions involved in rolls (have either from or to link)
+  const rolledPositions = positions.filter((pos) => {
     const links = positionLinks.get(pos.id);
-    return links && links.from === null && links.to !== null;
+    return links && (links.from !== null || links.to !== null);
   });
 
   // Build chains
   const chains: RollChain[] = [];
   const assignedPositions = new Set<string>();
 
-  chainHeads.forEach((headPos) => {
+  // For each rolled position, find its chain head and build the chain
+  rolledPositions.forEach((pos) => {
+    // Skip if already assigned to a chain
+    if (assignedPositions.has(pos.id)) return;
+
+    // Traverse backward to find the chain head
+    let headPos = pos;
+    let prevId = positionLinks.get(headPos.id)?.from;
+    while (prevId) {
+      const prevPos = positions.find(p => p.id === prevId);
+      if (!prevPos) break;
+      headPos = prevPos;
+      prevId = positionLinks.get(headPos.id)?.from;
+    }
+
     const chainId = randomUUID();
     const segments: RollChainSegment[] = [];
     let currentPos: Position | null = headPos;

@@ -26,6 +26,7 @@ interface DataTableProps<T> {
   emptyMessage?: string;
   pageSize?: number;
   testId?: string;
+  onRowClick?: (row: T) => void;
 }
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -37,6 +38,7 @@ export function DataTable<T>({
   emptyMessage = 'No data available',
   pageSize = 50,
   testId = 'data-table',
+  onRowClick,
 }: DataTableProps<T>) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>(null);
@@ -142,8 +144,9 @@ export function DataTable<T>({
               {paginatedData.map((row, index) => (
                 <TableRow
                   key={keyExtractor(row)}
-                  className="hover-elevate"
+                  className={onRowClick ? "hover-elevate active-elevate-2 cursor-pointer" : "hover-elevate"}
                   data-testid={`row-${index}`}
+                  onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((column) => (
                     <TableCell

@@ -3,8 +3,6 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
-import { Button } from '@/components/ui/button';
-import { Eye } from 'lucide-react';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 
@@ -116,22 +114,6 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
       sortValue: (row) => row.maxProfitableDebit ?? 0,
       className: 'text-right',
     },
-    {
-      key: 'actions',
-      header: 'Actions',
-      accessor: (row) => (
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setSelectedPosition(row)}
-          data-testid={`button-view-${row.id}`}
-        >
-          <Eye className="w-4 h-4 mr-2" />
-          View
-        </Button>
-      ),
-      sortable: false,
-    },
   ];
 
   const handleClearFilters = () => {
@@ -167,6 +149,7 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
         data={filteredPositions}
         columns={columns}
         keyExtractor={(row) => row.id}
+        onRowClick={(row) => setSelectedPosition(row)}
         emptyMessage="No open positions found"
         testId="table-open-positions"
       />
