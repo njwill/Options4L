@@ -22,6 +22,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [summary, setSummary] = useState<SummaryStats>({
     totalPL: 0,
+    realizedPL: 0,
     openPositionsCount: 0,
     closedPositionsCount: 0,
     totalPremiumCollected: 0,
@@ -69,9 +70,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen bg-background flex flex-col">
           {/* Header */}
-          <header className="border-b bg-card">
+          <header className="border-b bg-card flex-shrink-0">
             <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
               <div>
                 <h1 className="text-xl font-semibold">Robinhood Options Analysis</h1>
@@ -138,21 +139,32 @@ function App() {
           </header>
 
           {/* Main Content */}
-          <main className="max-w-7xl mx-auto px-4 py-8">
-            {activeTab === 'dashboard' && (
-              <Dashboard
-                positions={positions}
-                transactions={transactions}
-                rollChains={rollChains}
-                onFileUpload={handleFileUpload}
-                isProcessing={isProcessing}
-                summary={summary}
-              />
-            )}
-            {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} />}
-            {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} />}
-            {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
+          <main className="flex-1 w-full">
+            <div className="max-w-7xl mx-auto px-4 py-8">
+              {activeTab === 'dashboard' && (
+                <Dashboard
+                  positions={positions}
+                  transactions={transactions}
+                  rollChains={rollChains}
+                  onFileUpload={handleFileUpload}
+                  isProcessing={isProcessing}
+                  summary={summary}
+                />
+              )}
+              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} />}
+              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} />}
+              {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
+            </div>
           </main>
+
+          {/* Footer Disclaimer */}
+          <footer className="border-t bg-card flex-shrink-0">
+            <div className="max-w-7xl mx-auto px-4 py-6">
+              <p className="text-xs text-muted-foreground text-center leading-relaxed" data-testid="text-disclaimer">
+                Options involve a high degree of risk and are not suitable for all investors. Options4L.com is not an investment advisor. The calculations, information, and opinions on this site are for educational purposes only and are not investment advice. Calculations are estimates and do not account for all market conditions and events.
+              </p>
+            </div>
+          </footer>
         </div>
         <Toaster />
       </TooltipProvider>
