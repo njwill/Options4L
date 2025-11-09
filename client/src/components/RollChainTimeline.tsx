@@ -98,8 +98,25 @@ export function RollChainTimeline({ chain }: RollChainTimelineProps) {
                             {segment.toStrike && ` • $${segment.toStrike}`}
                           </p>
                         </div>
-                        <div className="text-right">
-                          <p className={`font-semibold tabular-nums ${segment.netCredit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      </div>
+
+                      {/* Credit/Debit breakdown */}
+                      <div className="grid grid-cols-3 gap-3 mt-3 mb-2 text-xs">
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Credit</p>
+                          <p className="font-semibold tabular-nums text-green-600" data-testid={`segment-${index}-credit`}>
+                            {formatCurrency(segment.credit ?? 0)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Debit</p>
+                          <p className="font-semibold tabular-nums text-red-600" data-testid={`segment-${index}-debit`}>
+                            {formatCurrency(segment.debit ?? 0)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground mb-0.5">Net</p>
+                          <p className={`font-semibold tabular-nums ${segment.netCredit >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid={`segment-${index}-net`}>
                             {formatCurrency(segment.netCredit)}
                           </p>
                         </div>

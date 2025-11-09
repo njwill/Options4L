@@ -128,7 +128,9 @@ export type Roll = z.infer<typeof rollSchema>;
 export const rollChainSegmentSchema = z.object({
   positionId: z.string(),
   rollDate: z.string().nullable(),
-  netCredit: z.number(), // Net credit/debit for this hop (positive = credit received)
+  credit: z.number(), // Money received (positive magnitude)
+  debit: z.number(), // Money paid (positive magnitude, stored as absolute value)
+  netCredit: z.number(), // Net credit/debit for this hop (credit - debit)
   fromExpiration: z.string().nullable(),
   toExpiration: z.string(),
   fromStrike: z.number().nullable(),

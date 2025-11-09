@@ -540,15 +540,20 @@ function buildRollChains(positions: Position[], rolls: Roll[], transactions: Tra
       const nextPosId = links?.to;
       const prevPosId = links?.from;
       
-      // Calculate segment P/L
-      let segmentPL: number;
+      // Calculate segment P/L with separate credit and debit components
+      let segmentCredit: number;
+      let segmentDebit: number;
       
       if (!prevPosId) {
         // This is the INITIAL position in the chain
         // Calculate P/L from only OPENING transactions (exclude closing transactions that rolled it)
         const positionTxns = transactions.filter(t => currentPos!.transactionIds.includes(t.id));
         const openingTxns = positionTxns.filter(t => t.transCode === 'STO' || t.transCode === 'BTO');
-        segmentPL = openingTxns.reduce((sum, t) => sum + t.amount, 0);
+        
+        // Separate credits (money received, positive amounts) from debits (money paid, negative amounts)
+        // Store debit as positive magnitude for consistency
+        segmentCredit = openingTxns.reduce((sum, t) => sum + Math.max(0, t.amount), 0);
+        segmentDebit = Math.abs(openingTxns.reduce((sum, t) => sum + Math.min(0, t.amount), 0));
       } else {
         // This is a ROLLED position
         // Find the roll that brought us to this position
@@ -556,13 +561,34 @@ function buildRollChains(positions: Position[], rolls: Roll[], transactions: Tra
           txnToPosition.get(r.fromLegId)?.id === prevPosId &&
           txnToPosition.get(r.toLegId)?.id === currentPos!.id
         );
-        // Use the roll's netCredit (which is close previous + open new)
-        segmentPL = roll?.netCredit ?? currentPos.netPL;
+        
+        if (roll) {
+          // Get the actual transactions for both closing and opening legs
+          const closeTxn = transactions.find(t => t.id === roll.fromLegId);
+          const openTxn = transactions.find(t => t.id === roll.toLegId);
+          
+          // Sum positive amounts from BOTH transactions as credits
+          // Sum negative amounts from BOTH transactions as debits (store as positive magnitude)
+          // This handles cases like STC (positive proceeds) + BTO (negative cost)
+          const closeCredit = closeTxn ? Math.max(0, closeTxn.amount) : 0;
+          const closeDebit = closeTxn ? Math.abs(Math.min(0, closeTxn.amount)) : 0;
+          const openCredit = openTxn ? Math.max(0, openTxn.amount) : 0;
+          const openDebit = openTxn ? Math.abs(Math.min(0, openTxn.amount)) : 0;
+          
+          segmentCredit = closeCredit + openCredit;
+          segmentDebit = closeDebit + openDebit;
+        } else {
+          // Fallback: split the position's netPL
+          segmentCredit = Math.max(0, currentPos.netPL);
+          segmentDebit = Math.abs(Math.min(0, currentPos.netPL));
+        }
       }
 
-      // Add to totals
-      totalCredits += Math.max(0, segmentPL);
-      totalDebits += Math.max(0, -segmentPL);
+      const segmentPL = segmentCredit - segmentDebit;
+
+      // Add to totals (both are now positive magnitudes)
+      totalCredits += segmentCredit;
+      totalDebits += segmentDebit;
       
       const rollDate = nextPosId ? 
         rolls.find(r => 
@@ -573,6 +599,8 @@ function buildRollChains(positions: Position[], rolls: Roll[], transactions: Tra
       segments.push({
         positionId: currentPos.id,
         rollDate,
+        credit: segmentCredit,
+        debit: segmentDebit,
         netCredit: segmentPL,
         fromExpiration: links && links.from ? 
           positions.find(p => p.id === links.from)?.legs[0]?.expiration ?? null : null,
