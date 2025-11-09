@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
-import { Upload } from 'lucide-react';
+import { Upload, ExternalLink } from 'lucide-react';
 import Dashboard from '@/pages/Dashboard';
 import OpenPositions from '@/pages/OpenPositions';
 import ClosedPositions from '@/pages/ClosedPositions';
@@ -78,6 +78,12 @@ function App() {
                 <p className="text-xs text-muted-foreground">Track strategies, rolls, and P/L</p>
               </div>
               <div className="flex items-center gap-2">
+                <Button variant="ghost" asChild data-testid="link-main-site">
+                  <a href="https://www.options4l.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                    Main Site
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </Button>
                 {positions.length > 0 && (
                   <label htmlFor="file-upload-header">
                     <Button variant="outline" asChild data-testid="button-upload-new">
