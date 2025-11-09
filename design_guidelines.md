@@ -1,20 +1,52 @@
 # Robinhood Trading Analysis Tool - Design Guidelines
 
-## Design Approach: Carbon Design System
+## Design Approach: Robinhood-Inspired Modern Financial Interface
 
-**Rationale**: Carbon Design System (IBM) is purpose-built for data-intensive, enterprise applications with complex tables, filtering, and analytical workflows. This aligns perfectly with the utility-focused, information-dense nature of financial trading analysis.
+**Rationale**: Robinhood's design philosophy emphasizes clean, modern aesthetics with a focus on accessibility and clarity. The signature bright green (#00C805) provides high contrast and energetic visual identity, while the pure black dark mode creates an immersive, focused experience for data analysis.
 
 **Core Principles**:
-- Data clarity over visual flair
+- Data clarity with bold, confident design
 - Scannable, structured information hierarchy
-- Efficient workflows for power users
-- Consistent, predictable interactions
+- High-contrast dark mode by default (switchable to light)
+- Modern, minimal aesthetic with purposeful color accents
+- Efficient workflows for active traders
+
+---
+
+## Color System
+
+**Primary Color: Robinhood Green**
+- Hex: #00C805
+- HSL: 145° 100% 39%
+- Usage: Primary buttons, links, positive indicators, chart primary data series
+- Contrast: Works on both black (dark mode) and white (light mode) backgrounds
+
+**Dark Mode (Default)**:
+- Background: Pure black (hsl(0 0% 0%))
+- Card: Very dark gray (hsl(0 0% 4%))
+- Border: Dark gray (hsl(0 0% 15%))
+- Foreground: Light gray (hsl(0 0% 95%))
+- Muted text: Medium gray (hsl(0 0% 65%))
+
+**Light Mode**:
+- Background: Pure white (hsl(0 0% 100%))
+- Card: Off-white (hsl(0 0% 98%))
+- Border: Light gray (hsl(0 0% 90%))
+- Foreground: Very dark gray (hsl(0 0% 9%))
+- Muted text: Medium gray (hsl(0 0% 40%))
+
+**Semantic Colors**:
+- Success/Profit: Robinhood Green (#00C805)
+- Danger/Loss: Red (hsl(0 85% 60%) dark, hsl(0 72% 50%) light)
+- Warning: Orange (hsl(30 90% 55%))
+- Info: Blue (hsl(200 85% 55%))
 
 ---
 
 ## Typography System
 
-**Font Stack**: IBM Plex Sans (via Google Fonts)
+**Font Stack**: System fonts matching Robinhood's modern aesthetic
+- Primary: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif
 - **Headings**: 
   - H1: 2xl (24px), semibold - Page titles (e.g., "Options Analysis Dashboard")
   - H2: xl (20px), semibold - Section headers (e.g., "Open Positions", "Closed Trades")
