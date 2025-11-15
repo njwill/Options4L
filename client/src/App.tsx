@@ -79,6 +79,12 @@ function App() {
                 <p className="text-xs text-muted-foreground">Track strategies, rolls, and P/L</p>
               </div>
               <div className="flex items-center gap-2">
+                <Button variant="ghost" asChild data-testid="link-instructions">
+                  <a href="https://youtu.be/W59dDyb_tyw" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                    Instructions
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </Button>
                 <Button variant="ghost" asChild data-testid="link-main-site">
                   <a href="https://www.options4l.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
                     Main Site
@@ -157,9 +163,21 @@ function App() {
             </div>
           </main>
 
-          {/* Footer Disclaimer */}
+          {/* Footer */}
           <footer className="border-t bg-card flex-shrink-0">
-            <div className="max-w-7xl mx-auto px-4 py-6">
+            <div className="max-w-7xl mx-auto px-4 py-6 space-y-3">
+              <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                <span className="font-medium text-foreground">Options4L is proudly open source.</span> View the code, contribute, or fork the project on{' '}
+                <a 
+                  href="https://github.com/njwill/Options4L" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline font-medium"
+                  data-testid="link-github"
+                >
+                  GitHub
+                </a>.
+              </p>
               <p className="text-xs text-muted-foreground text-center leading-relaxed" data-testid="text-disclaimer">
                 Options involve a high degree of risk and are not suitable for all investors. Options4L.com is not an investment advisor. The calculations, information, and opinions on this site are for educational purposes only and are not investment advice. Calculations are estimates and do not account for all market conditions and events.
               </p>
