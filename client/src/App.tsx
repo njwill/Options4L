@@ -5,16 +5,21 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
-import { Upload, ExternalLink } from 'lucide-react';
+import { Upload, ExternalLink, Key } from 'lucide-react';
 import Dashboard from '@/pages/Dashboard';
 import OpenPositions from '@/pages/OpenPositions';
 import ClosedPositions from '@/pages/ClosedPositions';
 import TransactionHistory from '@/pages/TransactionHistory';
+import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { LoginModal } from '@/components/LoginModal';
+import { UserMenu } from '@/components/UserMenu';
 import type { Position, Transaction, SummaryStats, RollChain } from '@shared/schema';
 
 type TabType = 'dashboard' | 'open' | 'closed' | 'transactions';
 
-function App() {
+function AppContent() {
+  const { user } = useAuth();
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [positions, setPositions] = useState<Position[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -112,6 +117,18 @@ function App() {
                     />
                   </label>
                 )}
+                {!user ? (
+                  <Button 
+                    variant="default" 
+                    onClick={() => setShowLoginModal(true)}
+                    data-testid="button-sign-in"
+                  >
+                    <Key className="w-4 h-4 mr-2" />
+                    Sign in
+                  </Button>
+                ) : (
+                  <UserMenu />
+                )}
                 <ThemeToggle />
               </div>
             </div>
@@ -184,9 +201,18 @@ function App() {
             </div>
           </footer>
         </div>
+        <LoginModal open={showLoginModal} onOpenChange={setShowLoginModal} />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
