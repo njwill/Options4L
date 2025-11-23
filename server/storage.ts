@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { db } from './db';
 import { dbTransactions, uploads, type DbTransaction } from '@shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
 /**
@@ -132,4 +132,48 @@ export async function getUserUploads(userId: string) {
     .from(uploads)
     .where(eq(uploads.userId, userId))
     .orderBy(uploads.uploadedAt);
+}
+
+/**
+ * Update user display name
+ */
+export async function updateUserDisplayName(userId: string, displayName: string) {
+  const { users } = await import('@shared/schema');
+  await db
+    .update(users)
+    .set({ displayName })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Get user profile data including transaction count
+ */
+export async function getUserProfile(userId: string) {
+  const { users } = await import('@shared/schema');
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId));
+  
+  if (!user) {
+    return null;
+  }
+  
+  // Get transaction count using SQL COUNT()
+  const [transactionCountResult] = await db
+    .select({ count: count() })
+    .from(dbTransactions)
+    .where(eq(dbTransactions.userId, userId));
+  
+  // Get upload count using SQL COUNT()
+  const [uploadCountResult] = await db
+    .select({ count: count() })
+    .from(uploads)
+    .where(eq(uploads.userId, userId));
+  
+  return {
+    ...user,
+    transactionCount: Number(transactionCountResult.count),
+    uploadCount: Number(uploadCountResult.count),
+  };
 }

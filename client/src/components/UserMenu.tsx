@@ -12,7 +12,11 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { User, LogOut } from 'lucide-react';
 
-export function UserMenu() {
+interface UserMenuProps {
+  onAccountClick?: () => void;
+}
+
+export function UserMenu({ onAccountClick }: UserMenuProps) {
   const { user, logout } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -57,9 +61,9 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
+        <DropdownMenuItem onClick={onAccountClick} data-testid="menuitem-account-settings">
           <User className="mr-2 h-4 w-4" />
-          Account Settings (Coming Soon)
+          Account Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

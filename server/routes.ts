@@ -7,7 +7,10 @@ import authRoutes from "./authRoutes";
 import { 
   createUploadRecord, 
   saveTransactionsToDatabase, 
-  loadUserTransactions 
+  loadUserTransactions,
+  getUserUploads,
+  getUserProfile,
+  updateUserDisplayName,
 } from "./storage";
 import "./types";
 
@@ -191,6 +194,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to import session data',
+      });
+    }
+  });
+
+  // Get user profile
+  app.get('/api/user/profile', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const profile = await getUserProfile(req.user.id);
+      if (!profile) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      return res.json({
+        success: true,
+        profile: {
+          id: profile.id,
+          nostrPubkey: profile.nostrPubkey,
+          displayName: profile.displayName,
+          createdAt: profile.createdAt,
+          lastLoginAt: profile.lastLoginAt,
+          transactionCount: profile.transactionCount,
+          uploadCount: profile.uploadCount,
+        },
+      });
+    } catch (error) {
+      console.error('Get profile error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get profile',
+      });
+    }
+  });
+
+  // Update user display name
+  app.put('/api/user/display-name', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { displayName } = req.body;
+      if (!displayName || typeof displayName !== 'string' || displayName.trim().length === 0) {
+        return res.status(400).json({ success: false, message: 'Display name required' });
+      }
+
+      if (displayName.length > 100) {
+        return res.status(400).json({ success: false, message: 'Display name too long (max 100 characters)' });
+      }
+
+      await updateUserDisplayName(req.user.id, displayName.trim());
+
+      return res.json({
+        success: true,
+        message: 'Display name updated successfully',
+      });
+    } catch (error) {
+      console.error('Update display name error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update display name',
+      });
+    }
+  });
+
+  // Get upload history
+  app.get('/api/uploads', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const uploads = await getUserUploads(req.user.id);
+
+      return res.json({
+        success: true,
+        uploads,
+      });
+    } catch (error) {
+      console.error('Get uploads error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get uploads',
+      });
+    }
+  });
+
+  // Export user data as CSV
+  app.get('/api/user/export', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const transactions = await loadUserTransactions(req.user.id);
+
+      // Build CSV content
+      const headers = 'Activity Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Symbol,Expiration,Strike,Option Type\n';
+      const rows = transactions.map(txn => {
+        return [
+          txn.activityDate,
+          `"${txn.instrument}"`,
+          `"${txn.description}"`,
+          txn.transCode,
+          txn.quantity,
+          txn.price,
+          txn.amount,
+          txn.option.symbol || '',
+          txn.option.expiration || '',
+          txn.option.strike || '',
+          txn.option.optionType || '',
+        ].join(',');
+      }).join('\n');
+
+      const csv = headers + rows;
+
+      // Set headers for file download
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="robinhood-trades-export.csv"');
+      return res.send(csv);
+    } catch (error) {
+      console.error('Export error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to export data',
       });
     }
   });

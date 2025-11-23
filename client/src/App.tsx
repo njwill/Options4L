@@ -10,6 +10,7 @@ import Dashboard from '@/pages/Dashboard';
 import OpenPositions from '@/pages/OpenPositions';
 import ClosedPositions from '@/pages/ClosedPositions';
 import TransactionHistory from '@/pages/TransactionHistory';
+import AccountSettings from '@/pages/AccountSettings';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { LoginModal } from '@/components/LoginModal';
 import { UserMenu } from '@/components/UserMenu';
@@ -17,7 +18,7 @@ import { ImportSessionDialog } from '@/components/ImportSessionDialog';
 import { useToast } from '@/hooks/use-toast';
 import type { Position, Transaction, SummaryStats, RollChain } from '@shared/schema';
 
-type TabType = 'dashboard' | 'open' | 'closed' | 'transactions';
+type TabType = 'dashboard' | 'open' | 'closed' | 'transactions' | 'account';
 
 function AppContent() {
   const { user } = useAuth();
@@ -118,6 +119,7 @@ function AppContent() {
     { id: 'open' as TabType, label: 'Open Positions', count: summary.openPositionsCount },
     { id: 'closed' as TabType, label: 'Closed Positions', count: summary.closedPositionsCount },
     { id: 'transactions' as TabType, label: 'Transaction History', count: transactions.length },
+    ...(user ? [{ id: 'account' as TabType, label: 'Account', count: null }] : []),
   ];
 
   return (
@@ -175,7 +177,7 @@ function AppContent() {
                     Sign in
                   </Button>
                 ) : (
-                  <UserMenu />
+                  <UserMenu onAccountClick={() => setActiveTab('account')} />
                 )}
                 <ThemeToggle />
               </div>
@@ -225,6 +227,7 @@ function AppContent() {
               {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} />}
               {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
+              {activeTab === 'account' && <AccountSettings />}
             </div>
           </main>
 
