@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { pgTable, uuid, varchar, timestamp, integer, text, numeric, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Transaction code types from Robinhood
 export const TransCodeEnum = z.enum([
@@ -204,3 +206,66 @@ export const uploadResponseSchema = z.object({
 });
 
 export type UploadResponse = z.infer<typeof uploadResponseSchema>;
+
+// ============================================================================
+// Database Tables (Drizzle ORM)
+// ============================================================================
+
+// Users table - stores NOSTR public keys
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  nostrPubkey: varchar("nostr_pubkey", { length: 64 }).notNull().unique(),
+  displayName: varchar("display_name", { length: 100 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+
+// Uploads table - tracks each file upload
+export const uploads = pgTable("uploads", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceFilename: varchar("source_filename", { length: 255 }).notNull(),
+  transactionCount: integer("transaction_count").notNull().default(0),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+
+export type Upload = typeof uploads.$inferSelect;
+export type InsertUpload = typeof uploads.$inferInsert;
+
+// Transactions table - stores raw transaction data with deduplication
+export const dbTransactions = pgTable("transactions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  uploadId: uuid("upload_id").notNull().references(() => uploads.id, { onDelete: "cascade" }),
+  
+  // Transaction hash for deduplication (computed from key fields)
+  transactionHash: varchar("transaction_hash", { length: 64 }).notNull(),
+  
+  // Raw transaction fields
+  activityDate: varchar("activity_date", { length: 50 }).notNull(),
+  processDate: varchar("process_date", { length: 50 }),
+  settleDate: varchar("settle_date", { length: 50 }),
+  instrument: varchar("instrument", { length: 100 }).notNull(),
+  description: text("description").notNull(),
+  transCode: varchar("trans_code", { length: 20 }).notNull(),
+  quantity: numeric("quantity", { precision: 18, scale: 8 }).notNull(),
+  price: numeric("price", { precision: 18, scale: 8 }).notNull(),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+  
+  // Parsed option details (nullable for non-option transactions)
+  symbol: varchar("symbol", { length: 20 }),
+  expiration: varchar("expiration", { length: 50 }),
+  strike: numeric("strike", { precision: 18, scale: 2 }),
+  optionType: varchar("option_type", { length: 10 }),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // Unique constraint to prevent duplicate transactions per user
+  userTransactionHashIdx: uniqueIndex("user_transaction_hash_idx").on(table.userId, table.transactionHash),
+}));
+
+export type DbTransaction = typeof dbTransactions.$inferSelect;
+export type InsertDbTransaction = typeof dbTransactions.$inferInsert;

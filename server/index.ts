@@ -1,6 +1,9 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { optionalAuth } from "./middleware/auth";
+import "./types";
 
 const app = express();
 
@@ -15,6 +18,10 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+
+// Apply optional auth middleware globally to populate req.user if authenticated
+app.use(optionalAuth);
 
 app.use((req, res, next) => {
   const start = Date.now();
