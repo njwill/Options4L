@@ -11,6 +11,10 @@ A comprehensive trading analysis application designed to process Robinhood tradi
 - Roll detection and chain linking across related positions
 - Real-time P/L calculations and performance metrics
 - Interactive dashboard with filtering and detailed position views
+- **NEW:** NOSTR authentication for persistent data storage
+- **NEW:** Transaction deduplication for authenticated users
+- **NEW:** Session import to save anonymous data after login
+- **NEW:** Account management with upload history and data export
 
 ## User Preferences
 
@@ -24,7 +28,7 @@ Preferred communication style: Simple, everyday language.
 
 **UI Component System:** shadcn/ui with Radix UI primitives, implementing Carbon Design System principles for data-intensive interfaces. The design prioritizes scannable tables, clear data hierarchy, and efficient workflows over visual decoration.
 
-**State Management:** Local React state with TanStack Query for server state management. The application uses a single-page architecture with tab-based navigation, maintaining uploaded data in component state to avoid unnecessary re-uploads.
+**State Management:** Local React state with TanStack Query for server state management and AuthProvider context for user authentication. The application uses a single-page architecture with tab-based navigation, maintaining uploaded data in component state to avoid unnecessary re-uploads.
 
 **Styling:** Tailwind CSS with a custom design token system supporting light/dark themes. Uses IBM Plex Sans font family for consistency with Carbon Design System guidelines.
 
@@ -69,8 +73,9 @@ Preferred communication style: Simple, everyday language.
 - Roll chains link positions that are temporally related (closing old position + opening new position on same day)
 
 **Key Architectural Choices:**
-- Stateless request processing - each upload is processed independently
-- In-memory computation for speed (no database persistence currently)
+- Dual-mode storage: In-memory for anonymous users, PostgreSQL for authenticated users
+- NOSTR authentication (NIP-07) with JWT session management via httpOnly cookies
+- Transaction deduplication using hash-based uniqueness (user_id + transaction_hash)
 - Synchronous processing pipeline to ensure data consistency
 - Comprehensive error handling with transaction-level anomaly tracking
 
@@ -101,9 +106,36 @@ Preferred communication style: Simple, everyday language.
 
 ### Session & Storage
 
-**Current Implementation:** In-memory storage using Map-based user storage (MemStorage class). User authentication schema exists but is not actively used - the application focuses on single-session data analysis.
+**Dual-Mode Implementation:**
 
-**Future Consideration:** Drizzle ORM is configured for PostgreSQL migration support, enabling persistent storage of positions and historical analysis if needed.
+**Anonymous Mode (Default):**
+- In-memory storage using Map-based MemStorage class
+- No account required - immediate access to all analysis features
+- Data exists only during current session
+- Privacy-focused - no data persisted to database
+
+**Authenticated Mode (Optional):**
+- NOSTR authentication via NIP-07 browser extensions (nos2x, Alby, Flamingo)
+- PostgreSQL storage using Drizzle ORM
+- Persistent data across sessions
+- Transaction deduplication using hash (activityDate, instrument, transCode, quantity, price, amount)
+- Upload history tracking with metadata (filename, date, transaction counts)
+- Session import feature to save anonymous data after login
+- Account management: display name editing, data export to CSV
+
+**Authentication Flow:**
+1. User clicks "Sign in with NOSTR"
+2. Backend generates challenge (nonce)
+3. Frontend creates NOSTR event (kind 27235) with challenge
+4. NIP-07 extension signs the event
+5. Backend verifies signature and issues JWT in httpOnly cookie
+6. User remains authenticated across sessions
+
+**Deduplication Strategy:**
+- Hash constructed from 6 transaction fields for uniqueness
+- Prevents duplicate data when re-uploading same file
+- Provides feedback showing new vs duplicate transaction counts
+- Preserves data integrity across multiple uploads
 
 ## External Dependencies
 
@@ -119,6 +151,11 @@ Preferred communication style: Simple, everyday language.
 - `react-hook-form` + `@hookform/resolvers` - Form validation infrastructure
 - `date-fns` - Date formatting and manipulation
 - `lucide-react` - Icon library
+- `nostr-tools` - NOSTR protocol utilities for authentication
+
+**Authentication:**
+- `jsonwebtoken` - JWT token generation and verification
+- `cookie-parser` - Cookie middleware for Express
 
 **Backend:**
 - `multer` - File upload middleware
@@ -136,7 +173,15 @@ Preferred communication style: Simple, everyday language.
 
 **Migration Setup:** Schema defined in `shared/schema.ts` with migration output to `./migrations` directory. Database connection via `DATABASE_URL` environment variable.
 
-**Note:** Database is provisioned but not actively used in current implementation - all data processing happens in-memory during request lifecycle.
+**Active Usage:** Database is used for authenticated user data with three main tables:
+- `users` - NOSTR public keys, display names, creation timestamps
+- `uploads` - Upload metadata (filename, date, transaction counts)
+- `transactions` - Individual transaction records with deduplication hash
+
+**Schema Highlights:**
+- User-scoped data isolation via foreign keys
+- Composite unique constraint on (user_id + transaction_hash) for deduplication
+- Indexes on user_id and activityDate for query performance
 
 ### Development Tools
 
