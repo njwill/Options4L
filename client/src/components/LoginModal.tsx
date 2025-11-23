@@ -57,7 +57,7 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
       const { nonce } = await challengeResponse.json();
 
       const event = {
-        kind: 22242,
+        kind: 27235,
         created_at: Math.floor(Date.now() / 1000),
         tags: [['challenge', nonce]],
         content: nonce,
