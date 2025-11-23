@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -13,16 +13,21 @@ import TransactionHistory from '@/pages/TransactionHistory';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { LoginModal } from '@/components/LoginModal';
 import { UserMenu } from '@/components/UserMenu';
+import { ImportSessionDialog } from '@/components/ImportSessionDialog';
+import { useToast } from '@/hooks/use-toast';
 import type { Position, Transaction, SummaryStats, RollChain } from '@shared/schema';
 
 type TabType = 'dashboard' | 'open' | 'closed' | 'transactions';
 
 function AppContent() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [positions, setPositions] = useState<Position[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]); // Original parsed transactions for import
   const [rollChains, setRollChains] = useState<RollChain[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [summary, setSummary] = useState<SummaryStats>({
@@ -35,6 +40,15 @@ function AppContent() {
     totalWins: 0,
     totalLosses: 0,
   });
+  const [hadAnonymousDataBeforeLogin, setHadAnonymousDataBeforeLogin] = useState(false);
+
+  // Monitor user login and check for anonymous session data
+  useEffect(() => {
+    if (user && rawTransactions.length > 0 && !hadAnonymousDataBeforeLogin) {
+      setShowImportDialog(true);
+      setHadAnonymousDataBeforeLogin(true);
+    }
+  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin]);
 
   const handleFileUpload = async (file: File) => {
     setIsProcessing(true);
@@ -45,6 +59,7 @@ function AppContent() {
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -54,15 +69,48 @@ function AppContent() {
       const data = await response.json();
       setPositions(data.positions);
       setTransactions(data.transactions);
+      setRawTransactions(data.rawTransactions || data.transactions); // Store raw parsed transactions
       setRollChains(data.rollChains || []);
       setSummary(data.summary);
       setActiveTab('dashboard');
+
+      if (data.message) {
+        toast({
+          title: 'Success',
+          description: data.message,
+        });
+      }
     } catch (error) {
       console.error('Upload error:', error);
+      toast({
+        title: 'Upload Failed',
+        description: error instanceof Error ? error.message : 'Failed to process file',
+        variant: 'destructive',
+      });
       throw error;
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleImportComplete = (data: {
+    transactions: Transaction[];
+    positions: Position[];
+    rollChains: RollChain[];
+    summary: SummaryStats;
+    message: string;
+  }) => {
+    setTransactions(data.transactions);
+    setPositions(data.positions);
+    setRollChains(data.rollChains);
+    setSummary(data.summary);
+    setRawTransactions([]); // Clear raw transactions after import
+    setActiveTab('dashboard');
+
+    toast({
+      title: 'Session Data Imported',
+      description: data.message,
+    });
   };
 
   const tabs = [
@@ -202,6 +250,12 @@ function AppContent() {
           </footer>
         </div>
         <LoginModal open={showLoginModal} onOpenChange={setShowLoginModal} />
+        <ImportSessionDialog
+          open={showImportDialog}
+          onOpenChange={setShowImportDialog}
+          transactions={rawTransactions}
+          onImportComplete={handleImportComplete}
+        />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

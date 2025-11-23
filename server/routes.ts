@@ -31,7 +31,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 2: Consolidate transactions (handle split transactions with weighted averages)
       const parsedTransactions = consolidateTransactions(rawTransactions);
 
-      let transactions = parsedTransactions;
+      // Clone parsed transactions BEFORE enrichment for session import
+      // This is the canonical format that saveTransactionsToDatabase expects
+      const rawTransactionsForImport = JSON.parse(JSON.stringify(parsedTransactions));
+
+      // Clone again for enrichment so we don't mutate the canonical copy
+      let transactions = JSON.parse(JSON.stringify(parsedTransactions));
       let newCount = parsedTransactions.length;
       let duplicateCount = 0;
 
@@ -103,6 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rollChains,
         summary,
         deduplication: req.user ? { newCount, duplicateCount, totalCount: transactions.length } : undefined,
+        rawTransactions: rawTransactionsForImport, // Include unmodified parsed transactions for session import
       });
 
     } catch (error) {
@@ -110,6 +116,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to process file',
+      });
+    }
+  });
+
+  // Import anonymous session data after login
+  app.post('/api/import-session', async (req, res) => {
+    try {
+      // Require authentication
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { transactions: anonymousTransactions } = req.body;
+
+      if (!Array.isArray(anonymousTransactions) || anonymousTransactions.length === 0) {
+        return res.status(400).json({ success: false, message: 'No transactions provided' });
+      }
+
+      // Frontend now sends the raw parsed transactions, so we can use them directly
+      // Create upload record for this import
+      const uploadId = await createUploadRecord(
+        req.user.id,
+        'Imported Session Data',
+        anonymousTransactions.length
+      );
+
+      // Save transactions to database (with deduplication)
+      const saveResult = await saveTransactionsToDatabase(
+        req.user.id,
+        uploadId,
+        anonymousTransactions
+      );
+
+      // Load ALL user transactions from database for analysis
+      const allTransactions = await loadUserTransactions(req.user.id);
+
+      // Build positions and detect rolls
+      const { positions, rolls, rollChains } = buildPositions(allTransactions);
+
+      // Calculate summary statistics
+      const summary = calculateSummary(positions);
+
+      // Update transaction strategy tags
+      allTransactions.forEach((txn) => {
+        const position = positions.find((p) => p.transactionIds.includes(txn.id));
+        if (position) {
+          txn.positionId = position.id;
+          txn.strategyTag = position.strategyType;
+        }
+      });
+
+      // Sort transactions and positions by date (most recent first)
+      allTransactions.sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime());
+      positions.sort((a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime());
+
+      const message = `Imported ${saveResult.newCount} new transactions${saveResult.duplicateCount > 0 ? `, skipped ${saveResult.duplicateCount} duplicates` : ''}. Total: ${allTransactions.length} transactions, ${positions.length} positions`;
+
+      return res.json({
+        success: true,
+        message,
+        transactions: allTransactions,
+        positions,
+        rollChains,
+        summary,
+        deduplication: {
+          newCount: saveResult.newCount,
+          duplicateCount: saveResult.duplicateCount,
+          totalCount: allTransactions.length,
+        },
+      });
+    } catch (error) {
+      console.error('Import session error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to import session data',
       });
     }
   });
