@@ -26,7 +26,7 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasNostrExtension, setHasNostrExtension] = useState(false);
   const [isCheckingExtension, setIsCheckingExtension] = useState(true);
-  const [activeTab, setActiveTab] = useState<'email' | 'nostr'>('email');
+  const [activeTab, setActiveTab] = useState<'email' | 'nostr'>('nostr');
 
   const checkNostrExtension = useCallback(() => {
     const hasExtension = typeof window !== 'undefined' && typeof window.nostr !== 'undefined' && window.nostr !== null;
