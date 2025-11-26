@@ -1,14 +1,18 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface User {
-  id: number;
-  nostrPubkey: string;
+  id: string;
+  nostrPubkey?: string | null;
   displayName: string | null;
+  email?: string | null;
+  profileImageUrl?: string | null;
+  authMethod?: 'nostr' | 'replit';
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
+  isAuthenticated: boolean;
   login: (signedEvent: any) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -22,16 +26,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async () => {
     try {
-      const response = await fetch('/api/auth/me', {
+      // Try the unified user endpoint first (works for both auth methods)
+      const response = await fetch('/api/auth/user', {
         credentials: 'include',
       });
       
       if (response.ok) {
         const data = await response.json();
-        setUser(data.user);
-      } else {
-        setUser(null);
+        if (data.user) {
+          setUser(data.user);
+          return;
+        }
       }
+      
+      // Fall back to NOSTR-specific endpoint
+      const nostrResponse = await fetch('/api/auth/me', {
+        credentials: 'include',
+      });
+      
+      if (nostrResponse.ok) {
+        const data = await nostrResponse.json();
+        if (data.user) {
+          setUser({ ...data.user, authMethod: 'nostr' });
+          return;
+        }
+      }
+      
+      setUser(null);
     } catch (error) {
       console.error('Failed to fetch user:', error);
       setUser(null);
@@ -58,14 +79,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const { user: newUser } = await loginResponse.json();
-    setUser(newUser);
+    setUser({ ...newUser, authMethod: 'nostr' });
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      credentials: 'include',
-    });
+    // Try both logout endpoints (both use POST for CSRF protection)
+    await Promise.all([
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => {}),
+      fetch('/api/logout', {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => {}),
+    ]);
     setUser(null);
   };
 
@@ -74,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

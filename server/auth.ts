@@ -20,7 +20,7 @@ setInterval(() => {
 
 export interface AuthUser {
   id: string;
-  nostrPubkey: string;
+  nostrPubkey: string | null;
   displayName: string | null;
 }
 

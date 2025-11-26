@@ -4,6 +4,7 @@ import multer from "multer";
 import { parseFile, consolidateTransactions } from "./utils/csvParser";
 import { buildPositions, calculateSummary } from "./utils/positionBuilder";
 import authRoutes from "./authRoutes";
+import { setupAuth, isReplitAuthenticated } from "./replitAuth";
 import { 
   createUploadRecord, 
   saveTransactionsToDatabase, 
@@ -12,14 +13,75 @@ import {
   getUserProfile,
   updateUserDisplayName,
   deleteUpload,
+  getReplitUser,
 } from "./storage";
 import "./types";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+/**
+ * Get authenticated user ID from either Replit Auth or NOSTR JWT
+ */
+async function getAuthenticatedUserId(req: any): Promise<string | null> {
+  // Check for Replit Auth session first
+  if (req.user?.claims?.sub) {
+    const replitUser = await getReplitUser(req.user.claims.sub);
+    return replitUser?.id || null;
+  }
+  
+  // Check for NOSTR JWT auth
+  if (req.user?.id) {
+    return req.user.id;
+  }
+  
+  return null;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Register auth routes
+  // Set up Replit Auth (passport, sessions, OIDC routes)
+  await setupAuth(app);
+  
+  // Register NOSTR auth routes (legacy/alternative auth)
   app.use('/api/auth', authRoutes);
+  
+  // Replit Auth user endpoint
+  app.get('/api/auth/user', isReplitAuthenticated, async (req: any, res) => {
+    try {
+      // Check for Replit Auth session
+      if (req.user?.claims?.sub) {
+        const replitUserId = req.user.claims.sub;
+        const user = await getReplitUser(replitUserId);
+        if (user) {
+          return res.json({
+            user: {
+              id: user.id,
+              displayName: user.displayName,
+              email: user.email,
+              profileImageUrl: user.profileImageUrl,
+              authMethod: 'replit',
+            },
+          });
+        }
+      }
+      
+      // Check for NOSTR JWT auth (existing auth method)
+      if (req.user?.id) {
+        return res.json({
+          user: {
+            id: req.user.id,
+            displayName: req.user.displayName,
+            nostrPubkey: req.user.nostrPubkey,
+            authMethod: 'nostr',
+          },
+        });
+      }
+      
+      return res.status(401).json({ error: 'Not authenticated' });
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
   
   app.post('/api/upload', upload.single('file'), async (req, res) => {
     try {
@@ -44,20 +106,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let newCount = parsedTransactions.length;
       let duplicateCount = 0;
 
-      // Check if user is authenticated
-      if (req.user) {
+      // Check if user is authenticated (either Replit Auth or NOSTR)
+      const userId = await getAuthenticatedUserId(req);
+      if (userId) {
         // AUTHENTICATED MODE: Save to database with deduplication
         
         // Create upload record
         const uploadId = await createUploadRecord(
-          req.user.id,
+          userId,
           originalname,
           parsedTransactions.length
         );
         
         // Save transactions to database (with deduplication)
         const saveResult = await saveTransactionsToDatabase(
-          req.user.id,
+          userId,
           uploadId,
           parsedTransactions
         );
@@ -66,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         duplicateCount = saveResult.duplicateCount;
         
         // Load ALL user transactions from database for analysis
-        transactions = await loadUserTransactions(req.user.id);
+        transactions = await loadUserTransactions(userId);
       }
 
       // Step 3: Build positions and detect rolls (works on all transactions)
@@ -76,7 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const summary = calculateSummary(positions);
 
       // Step 5: Update transaction strategy tags based on positions
-      transactions.forEach((txn) => {
+      transactions.forEach((txn: Transaction) => {
         const position = positions.find((p) => p.transactionIds.includes(txn.id));
         if (position) {
           txn.positionId = position.id;
@@ -85,7 +148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Sort transactions by date (most recent first)
-      transactions.sort((a, b) => {
+      transactions.sort((a: Transaction, b: Transaction) => {
         const dateA = new Date(a.activityDate);
         const dateB = new Date(b.activityDate);
         return dateB.getTime() - dateA.getTime();
@@ -100,7 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Build success message
       let message = `Successfully processed ${transactions.length} transactions and identified ${positions.length} positions`;
-      if (req.user) {
+      if (userId) {
         message = `Added ${newCount} new transactions${duplicateCount > 0 ? `, skipped ${duplicateCount} duplicates` : ''}. Total: ${transactions.length} transactions, ${positions.length} positions`;
       }
 
@@ -111,7 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         positions,
         rollChains,
         summary,
-        deduplication: req.user ? { newCount, duplicateCount, totalCount: transactions.length } : undefined,
+        deduplication: userId ? { newCount, duplicateCount, totalCount: transactions.length } : undefined,
         rawTransactions: rawTransactionsForImport, // Include unmodified parsed transactions for session import
       });
 
@@ -128,7 +191,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/import-session', async (req, res) => {
     try {
       // Require authentication
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
@@ -141,20 +205,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Frontend now sends the raw parsed transactions, so we can use them directly
       // Create upload record for this import
       const uploadId = await createUploadRecord(
-        req.user.id,
+        userId,
         'Imported Session Data',
         anonymousTransactions.length
       );
 
       // Save transactions to database (with deduplication)
       const saveResult = await saveTransactionsToDatabase(
-        req.user.id,
+        userId,
         uploadId,
         anonymousTransactions
       );
 
       // Load ALL user transactions from database for analysis
-      const allTransactions = await loadUserTransactions(req.user.id);
+      const allTransactions = await loadUserTransactions(userId);
 
       // Build positions and detect rolls
       const { positions, rolls, rollChains } = buildPositions(allTransactions);
@@ -202,11 +266,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get user profile
   app.get('/api/user/profile', async (req, res) => {
     try {
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
-      const profile = await getUserProfile(req.user.id);
+      const profile = await getUserProfile(userId);
       if (!profile) {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
@@ -216,7 +281,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         profile: {
           id: profile.id,
           nostrPubkey: profile.nostrPubkey,
+          email: profile.email,
           displayName: profile.displayName,
+          profileImageUrl: profile.profileImageUrl,
           createdAt: profile.createdAt,
           lastLoginAt: profile.lastLoginAt,
           transactionCount: profile.transactionCount,
@@ -236,12 +303,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Called automatically on login to restore user's dashboard
   app.get('/api/user/data', async (req, res) => {
     try {
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
       // Load all user transactions from database
-      const transactions = await loadUserTransactions(req.user.id);
+      const transactions = await loadUserTransactions(userId);
 
       // If no transactions, return empty state
       if (transactions.length === 0) {
@@ -303,7 +371,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Update user display name
   app.put('/api/user/display-name', async (req, res) => {
     try {
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
@@ -316,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ success: false, message: 'Display name too long (max 100 characters)' });
       }
 
-      await updateUserDisplayName(req.user.id, displayName.trim());
+      await updateUserDisplayName(userId, displayName.trim());
 
       return res.json({
         success: true,
@@ -334,11 +403,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get upload history
   app.get('/api/uploads', async (req, res) => {
     try {
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
-      const uploads = await getUserUploads(req.user.id);
+      const uploads = await getUserUploads(userId);
 
       return res.json({
         success: true,
@@ -356,12 +426,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete an upload and its transactions
   app.delete('/api/uploads/:id', async (req, res) => {
     try {
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
       const uploadId = req.params.id;
-      const success = await deleteUpload(req.user.id, uploadId);
+      const success = await deleteUpload(userId, uploadId);
 
       if (!success) {
         return res.status(404).json({ 
@@ -386,11 +457,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Export user data as CSV
   app.get('/api/user/export', async (req, res) => {
     try {
-      if (!req.user) {
+      const userId = await getAuthenticatedUserId(req);
+      if (!userId) {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
-      const transactions = await loadUserTransactions(req.user.id);
+      const transactions = await loadUserTransactions(userId);
 
       // Build CSV content
       const headers = 'Activity Date,Instrument,Description,Trans Code,Quantity,Price,Amount,Symbol,Expiration,Strike,Option Type\n';
