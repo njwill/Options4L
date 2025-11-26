@@ -404,7 +404,12 @@ function AppContent() {
               {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} />}
               {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
-              {activeTab === 'account' && <AccountSettings />}
+              {activeTab === 'account' && <AccountSettings onDataChange={() => {
+                if (user) {
+                  setHasLoadedUserData(false);
+                  setLoadAttempts(0);
+                }
+              }} />}
             </div>
           </main>
 

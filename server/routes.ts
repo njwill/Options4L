@@ -11,6 +11,7 @@ import {
   getUserUploads,
   getUserProfile,
   updateUserDisplayName,
+  deleteUpload,
 } from "./storage";
 import "./types";
 
@@ -348,6 +349,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to get uploads',
+      });
+    }
+  });
+
+  // Delete an upload and its transactions
+  app.delete('/api/uploads/:id', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const uploadId = req.params.id;
+      const success = await deleteUpload(req.user.id, uploadId);
+
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Upload not found or you do not have permission to delete it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Upload and associated transactions deleted successfully',
+      });
+    } catch (error) {
+      console.error('Delete upload error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete upload',
       });
     }
   });

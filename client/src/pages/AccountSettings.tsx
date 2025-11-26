@@ -5,9 +5,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Save, Clock, FileText } from 'lucide-react';
+import { Download, Save, Clock, FileText, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { hexToNpub, truncateNpub } from '@/lib/nostr';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface UserProfile {
   id: string;
@@ -26,7 +37,11 @@ interface Upload {
   uploadedAt: string;
 }
 
-export default function AccountSettings() {
+interface AccountSettingsProps {
+  onDataChange?: () => void;
+}
+
+export default function AccountSettings({ onDataChange }: AccountSettingsProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -35,6 +50,7 @@ export default function AccountSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [deletingUploadId, setDeletingUploadId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfileData();
@@ -135,6 +151,38 @@ export default function AccountSettings() {
       });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleDeleteUpload = async (uploadId: string) => {
+    try {
+      setDeletingUploadId(uploadId);
+      const response = await fetch(`/api/uploads/${uploadId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: 'Deleted',
+          description: data.message,
+        });
+        fetchProfileData();
+        onDataChange?.();
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (error) {
+      console.error('Failed to delete upload:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete upload',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingUploadId(null);
     }
   };
 
@@ -274,9 +322,44 @@ export default function AccountSettings() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="w-4 h-4" />
-                    {format(new Date(upload.uploadedAt), 'MMM d, yyyy h:mm a')}
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="w-4 h-4" />
+                      {format(new Date(upload.uploadedAt), 'MMM d, yyyy h:mm a')}
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
+                          disabled={deletingUploadId === upload.id}
+                          data-testid={`button-delete-upload-${upload.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Upload</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{upload.sourceFilename}"? 
+                            This will permanently remove {upload.transactionCount} transactions 
+                            from your account. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteUpload(upload.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            data-testid={`button-confirm-delete-${upload.id}`}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               ))}

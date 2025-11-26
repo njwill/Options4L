@@ -146,6 +146,34 @@ export async function updateUserDisplayName(userId: string, displayName: string)
 }
 
 /**
+ * Delete an upload and all its associated transactions
+ * Returns true if successful, false if upload not found or not owned by user
+ */
+export async function deleteUpload(userId: string, uploadId: string): Promise<boolean> {
+  // First verify the upload belongs to this user
+  const [upload] = await db
+    .select()
+    .from(uploads)
+    .where(and(eq(uploads.id, uploadId), eq(uploads.userId, userId)));
+  
+  if (!upload) {
+    return false;
+  }
+  
+  // Delete all transactions associated with this upload
+  await db
+    .delete(dbTransactions)
+    .where(and(eq(dbTransactions.uploadId, uploadId), eq(dbTransactions.userId, userId)));
+  
+  // Delete the upload record
+  await db
+    .delete(uploads)
+    .where(eq(uploads.id, uploadId));
+  
+  return true;
+}
+
+/**
  * Get user profile data including transaction count
  */
 export async function getUserProfile(userId: string) {
