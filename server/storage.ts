@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { db } from './db';
 import { dbTransactions, uploads, type DbTransaction } from '@shared/schema';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and, count, asc, sql } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
 /**
@@ -9,13 +9,20 @@ import type { Transaction, RawTransaction } from '@shared/schema';
  */
 export function computeTransactionHash(txn: RawTransaction | Transaction): string {
   // Use key fields that uniquely identify a transaction
+  // Include option details to distinguish different contracts with same price/qty
+  const option = ('option' in txn && txn.option) ? txn.option : {};
   const key = [
     ('activityDate' in txn) ? txn.activityDate : '',
     txn.instrument,
     txn.transCode,
+    txn.description || '',
     ('quantity' in txn && typeof txn.quantity === 'number') ? txn.quantity.toString() : txn.quantity,
     ('price' in txn && typeof txn.price === 'number') ? txn.price.toString() : txn.price,
     ('amount' in txn && typeof txn.amount === 'number') ? txn.amount.toString() : txn.amount,
+    ('symbol' in option) ? option.symbol || '' : '',
+    ('expiration' in option) ? option.expiration || '' : '',
+    ('strike' in option) ? option.strike?.toString() || '' : '',
+    ('optionType' in option) ? option.optionType || '' : '',
   ].join('|');
   
   return createHash('sha256').update(key).digest('hex');
@@ -79,7 +86,8 @@ export async function loadUserTransactions(userId: string): Promise<Transaction[
   const dbTxns = await db
     .select()
     .from(dbTransactions)
-    .where(eq(dbTransactions.userId, userId));
+    .where(eq(dbTransactions.userId, userId))
+    .orderBy(sql`to_date(${dbTransactions.activityDate}, 'MM/DD/YYYY')`, asc(dbTransactions.id));
   
   // Convert database transactions to Transaction format
   return dbTxns.map((dbTxn): Transaction => ({
