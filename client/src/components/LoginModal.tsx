@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -24,12 +24,46 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasNostrExtension, setHasNostrExtension] = useState(false);
+  const [isCheckingExtension, setIsCheckingExtension] = useState(true);
 
-  const checkNostrExtension = () => {
-    const hasExtension = typeof window.nostr !== 'undefined';
+  const checkNostrExtension = useCallback(() => {
+    const hasExtension = typeof window !== 'undefined' && typeof window.nostr !== 'undefined' && window.nostr !== null;
     setHasNostrExtension(hasExtension);
     return hasExtension;
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    setIsCheckingExtension(true);
+    
+    const checkWithRetry = async () => {
+      const delays = [0, 100, 300, 500, 1000, 2000];
+      
+      for (const delay of delays) {
+        if (delay > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        if (checkNostrExtension()) {
+          setIsCheckingExtension(false);
+          return;
+        }
+      }
+      
+      setIsCheckingExtension(false);
+    };
+
+    checkWithRetry();
+
+    const interval = setInterval(() => {
+      if (checkNostrExtension()) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [open, checkNostrExtension]);
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -77,9 +111,7 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
   };
 
   const handleOpenChange = (newOpen: boolean) => {
-    if (newOpen) {
-      checkNostrExtension();
-    } else {
+    if (!newOpen) {
       setError(null);
     }
     onOpenChange(newOpen);
@@ -99,7 +131,16 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
         </DialogHeader>
 
         <div className="space-y-4">
-          {!hasNostrExtension && open && (
+          {isCheckingExtension && (
+            <Alert>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertDescription className="text-sm">
+                Detecting NOSTR extension...
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {!isCheckingExtension && !hasNostrExtension && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="space-y-2">
@@ -128,11 +169,14 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  If you have an extension installed, try refreshing the page.
+                </p>
               </AlertDescription>
             </Alert>
           )}
 
-          {hasNostrExtension && (
+          {!isCheckingExtension && hasNostrExtension && (
             <Alert>
               <CheckCircle className="h-4 w-4 text-primary" />
               <AlertDescription className="text-sm">
@@ -151,7 +195,7 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
           <div className="space-y-3">
             <Button
               onClick={handleLogin}
-              disabled={isLoading || !hasNostrExtension}
+              disabled={isLoading || isCheckingExtension || !hasNostrExtension}
               className="w-full"
               data-testid="button-nostr-login"
             >
