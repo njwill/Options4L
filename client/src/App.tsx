@@ -49,8 +49,10 @@ function AppContent() {
   
   // Ref to track login state for race condition protection
   const isLoggedInRef = useRef(false);
+  // Ref to track previous user for detecting logout transitions
+  const prevUserRef = useRef<typeof user>(null);
   
-  // Keep ref in sync with user state
+  // Keep refs in sync with user state
   useEffect(() => {
     isLoggedInRef.current = !!user;
   }, [user]);
@@ -167,28 +169,19 @@ function AppContent() {
       }
     }
     
-    // Reset everything when user logs out - clear all data and counters
-    if (!user) {
-      if (hasLoadedUserData) {
-        setHasLoadedUserData(false);
-      }
-      if (loadAttempts > 0) {
-        setLoadAttempts(0);
-      }
-      // Clear all trading data so user sees empty homepage
-      if (positions.length > 0) {
-        setPositions([]);
-      }
-      if (transactions.length > 0) {
-        setTransactions([]);
-      }
-      if (rawTransactions.length > 0) {
-        setRawTransactions([]);
-      }
-      if (rollChains.length > 0) {
-        setRollChains([]);
-      }
-      // Reset summary to defaults
+    // Only clear data on actual logout transition (was logged in, now logged out)
+    // This prevents clearing data for anonymous users who were never logged in
+    const wasLoggedIn = !!prevUserRef.current;
+    const isLoggedOut = !user;
+    
+    if (wasLoggedIn && isLoggedOut) {
+      // User just logged out - clear everything
+      setHasLoadedUserData(false);
+      setLoadAttempts(0);
+      setPositions([]);
+      setTransactions([]);
+      setRawTransactions([]);
+      setRollChains([]);
       setSummary({
         totalPL: 0,
         realizedPL: 0,
@@ -199,20 +192,17 @@ function AppContent() {
         totalWins: 0,
         totalLosses: 0,
       });
-      // Reset to dashboard tab (shows upload prompt when no data)
       setActiveTab('dashboard');
-      // Close any open dialogs
       setShowImportDialog(false);
       setShowLoginModal(false);
-      // Reset anonymous data flag for next session
-      if (hadAnonymousDataBeforeLogin) {
-        setHadAnonymousDataBeforeLogin(false);
-      }
-      // Clear any cached network state
+      setHadAnonymousDataBeforeLogin(false);
       setIsProcessing(false);
       queryClient.clear();
     }
-  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin, hasLoadedUserData, isLoadingUserData, loadAttempts, positions.length, transactions.length, rollChains.length]);
+    
+    // Update prev user ref for next comparison
+    prevUserRef.current = user;
+  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin, hasLoadedUserData, isLoadingUserData, loadAttempts]);
 
   const handleFileUpload = async (file: File) => {
     // Capture auth state at invocation to detect logout during upload
