@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { User, LogOut } from 'lucide-react';
+import { hexToNpub, truncateNpub } from '@/lib/nostr';
 
 interface UserMenuProps {
   onAccountClick?: () => void;
@@ -30,7 +31,8 @@ export function UserMenu({ onAccountClick }: UserMenuProps) {
     .toUpperCase()
     .slice(0, 2);
 
-  const shortPubkey = user.nostrPubkey.slice(0, 8) + '...' + user.nostrPubkey.slice(-8);
+  const npub = hexToNpub(user.nostrPubkey);
+  const shortPubkey = truncateNpub(npub);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);

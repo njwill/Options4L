@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Download, Save, Clock, FileText } from 'lucide-react';
 import { format } from 'date-fns';
+import { hexToNpub, truncateNpub } from '@/lib/nostr';
 
 interface UserProfile {
   id: string;
@@ -158,7 +159,7 @@ export default function AccountSettings() {
     );
   }
 
-  const npub = profile?.nostrPubkey ? `npub${profile.nostrPubkey.slice(0, 8)}...${profile.nostrPubkey.slice(-8)}` : '';
+  const npub = profile?.nostrPubkey ? truncateNpub(hexToNpub(profile.nostrPubkey)) : '';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6" data-testid="page-account-settings">
