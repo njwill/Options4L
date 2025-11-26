@@ -129,7 +129,14 @@ function AppContent() {
           {/* Header */}
           <header className="border-b bg-card flex-shrink-0">
             <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-              <div>
+              <div 
+                role="button"
+                tabIndex={0}
+                onClick={() => setActiveTab('dashboard')} 
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTab('dashboard'); } }}
+                className="text-left cursor-pointer hover-elevate rounded-md px-2 py-1 -mx-2 -my-1"
+                data-testid="link-home"
+              >
                 <h1 className="text-xl font-semibold">Robinhood Options Analysis</h1>
                 <p className="text-xs text-muted-foreground">Track strategies, rolls, and P/L</p>
               </div>
