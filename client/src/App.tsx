@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -46,6 +46,14 @@ function AppContent() {
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
   const [loadAttempts, setLoadAttempts] = useState(0);
   const MAX_LOAD_ATTEMPTS = 3;
+  
+  // Ref to track login state for race condition protection
+  const isLoggedInRef = useRef(false);
+  
+  // Keep ref in sync with user state
+  useEffect(() => {
+    isLoggedInRef.current = !!user;
+  }, [user]);
 
   // Load user's saved data from database after login
   const loadUserData = async (): Promise<boolean> => {
@@ -58,6 +66,12 @@ function AppContent() {
       const response = await fetch('/api/user/data', {
         credentials: 'include',
       });
+
+      // Guard against race condition - user may have logged out during fetch
+      if (!isLoggedInRef.current) {
+        console.log('User logged out during data fetch, discarding results');
+        return false;
+      }
 
       // Check if response is JSON before parsing
       const contentType = response.headers.get('content-type');
@@ -77,6 +91,12 @@ function AppContent() {
       }
 
       const data = await response.json();
+      
+      // Final guard before setting state
+      if (!isLoggedInRef.current) {
+        console.log('User logged out before data could be applied');
+        return false;
+      }
       
       if (data.hasData) {
         setPositions(data.positions);
@@ -147,7 +167,7 @@ function AppContent() {
       }
     }
     
-    // Reset when user logs out - always reset counters regardless of load state
+    // Reset everything when user logs out - clear all data and counters
     if (!user) {
       if (hasLoadedUserData) {
         setHasLoadedUserData(false);
@@ -155,10 +175,49 @@ function AppContent() {
       if (loadAttempts > 0) {
         setLoadAttempts(0);
       }
+      // Clear all trading data so user sees empty homepage
+      if (positions.length > 0) {
+        setPositions([]);
+      }
+      if (transactions.length > 0) {
+        setTransactions([]);
+      }
+      if (rawTransactions.length > 0) {
+        setRawTransactions([]);
+      }
+      if (rollChains.length > 0) {
+        setRollChains([]);
+      }
+      // Reset summary to defaults
+      setSummary({
+        totalPL: 0,
+        realizedPL: 0,
+        openPositionsCount: 0,
+        closedPositionsCount: 0,
+        totalPremiumCollected: 0,
+        winRate: 0,
+        totalWins: 0,
+        totalLosses: 0,
+      });
+      // Reset to dashboard tab (shows upload prompt when no data)
+      setActiveTab('dashboard');
+      // Close any open dialogs
+      setShowImportDialog(false);
+      setShowLoginModal(false);
+      // Reset anonymous data flag for next session
+      if (hadAnonymousDataBeforeLogin) {
+        setHadAnonymousDataBeforeLogin(false);
+      }
+      // Clear any cached network state
+      setIsProcessing(false);
+      queryClient.clear();
     }
-  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin, hasLoadedUserData, isLoadingUserData, loadAttempts]);
+  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin, hasLoadedUserData, isLoadingUserData, loadAttempts, positions.length, transactions.length, rollChains.length]);
 
   const handleFileUpload = async (file: File) => {
+    // Capture auth state at invocation to detect logout during upload
+    const startedLoggedIn = !!user;
+    
     setIsProcessing(true);
     try {
       const formData = new FormData();
@@ -175,6 +234,14 @@ function AppContent() {
       }
 
       const data = await response.json();
+      
+      // Guard against setting state if user logged out during upload
+      // Only applies if we started logged in - anonymous uploads always proceed
+      if (startedLoggedIn && !isLoggedInRef.current) {
+        console.log('User logged out during upload, discarding results');
+        return;
+      }
+      
       setPositions(data.positions);
       setTransactions(data.transactions);
       setRawTransactions(data.rawTransactions || data.transactions); // Store raw parsed transactions
@@ -208,6 +275,12 @@ function AppContent() {
     summary: SummaryStats;
     message: string;
   }) => {
+    // Guard against setting state if user logged out during import
+    if (!isLoggedInRef.current) {
+      console.log('User logged out during import, discarding results');
+      return;
+    }
+    
     setTransactions(data.transactions);
     setPositions(data.positions);
     setRollChains(data.rollChains);
