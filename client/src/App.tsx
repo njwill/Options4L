@@ -42,14 +42,121 @@ function AppContent() {
     totalLosses: 0,
   });
   const [hadAnonymousDataBeforeLogin, setHadAnonymousDataBeforeLogin] = useState(false);
+  const [hasLoadedUserData, setHasLoadedUserData] = useState(false);
+  const [isLoadingUserData, setIsLoadingUserData] = useState(false);
+  const [loadAttempts, setLoadAttempts] = useState(0);
+  const MAX_LOAD_ATTEMPTS = 3;
 
-  // Monitor user login and check for anonymous session data
-  useEffect(() => {
-    if (user && rawTransactions.length > 0 && !hadAnonymousDataBeforeLogin) {
-      setShowImportDialog(true);
-      setHadAnonymousDataBeforeLogin(true);
+  // Load user's saved data from database after login
+  const loadUserData = async (): Promise<boolean> => {
+    // Prevent concurrent loads
+    if (isLoadingUserData) return false;
+    
+    try {
+      setIsLoadingUserData(true);
+      setIsProcessing(true);
+      const response = await fetch('/api/user/data', {
+        credentials: 'include',
+      });
+
+      // Check if response is JSON before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.log('User data endpoint returned non-JSON response, auth may still be settling');
+        // This is likely a transient issue - allow retry
+        return false;
+      }
+
+      if (!response.ok) {
+        // Handle auth errors - user might not be fully logged in yet
+        if (response.status === 401) {
+          console.log('Auth not ready yet, will retry');
+          return false;
+        }
+        throw new Error('Failed to load user data');
+      }
+
+      const data = await response.json();
+      
+      if (data.hasData) {
+        setPositions(data.positions);
+        setTransactions(data.transactions);
+        setRollChains(data.rollChains || []);
+        setSummary(data.summary);
+        setActiveTab('dashboard');
+        
+        toast({
+          title: 'Welcome back!',
+          description: `Loaded ${data.transactions.length} transactions and ${data.positions.length} positions`,
+        });
+      }
+      return true; // Successfully loaded (even if no data)
+    } catch (error) {
+      console.error('Failed to load user data:', error);
+      toast({
+        title: 'Failed to load data',
+        description: 'Could not load your saved data. Please try uploading your file again.',
+        variant: 'destructive',
+      });
+      // Return true on exception to stop retries - show toast and let user upload
+      return true;
+    } finally {
+      setIsProcessing(false);
+      setIsLoadingUserData(false);
     }
-  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin]);
+  };
+
+  // Monitor user login and either show import dialog or load saved data
+  useEffect(() => {
+    const handleUserLogin = async () => {
+      if (rawTransactions.length > 0 && !hadAnonymousDataBeforeLogin) {
+        // User has anonymous session data - show import dialog
+        setShowImportDialog(true);
+        setHadAnonymousDataBeforeLogin(true);
+        setHasLoadedUserData(true);
+      } else if (rawTransactions.length === 0 && !isLoadingUserData) {
+        // No anonymous data - load user's saved data from database
+        const success = await loadUserData();
+        if (success) {
+          setHasLoadedUserData(true);
+        } else {
+          // Increment attempt counter - will retry up to MAX_LOAD_ATTEMPTS
+          setLoadAttempts(prev => prev + 1);
+        }
+      }
+    };
+
+    // Stop retrying after max attempts
+    if (loadAttempts >= MAX_LOAD_ATTEMPTS && !hasLoadedUserData) {
+      setHasLoadedUserData(true); // Stop further attempts
+      toast({
+        title: 'Unable to load data',
+        description: 'Please upload your trading data file to get started.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (user && !hasLoadedUserData && !isLoadingUserData) {
+      // Add small delay between retry attempts
+      if (loadAttempts > 0) {
+        const timer = setTimeout(handleUserLogin, 1000);
+        return () => clearTimeout(timer);
+      } else {
+        handleUserLogin();
+      }
+    }
+    
+    // Reset when user logs out - always reset counters regardless of load state
+    if (!user) {
+      if (hasLoadedUserData) {
+        setHasLoadedUserData(false);
+      }
+      if (loadAttempts > 0) {
+        setLoadAttempts(0);
+      }
+    }
+  }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin, hasLoadedUserData, isLoadingUserData, loadAttempts]);
 
   const handleFileUpload = async (file: File) => {
     setIsProcessing(true);

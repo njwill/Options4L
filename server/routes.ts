@@ -231,6 +231,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get user's saved data (transactions, positions, rollChains, summary)
+  // Called automatically on login to restore user's dashboard
+  app.get('/api/user/data', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      // Load all user transactions from database
+      const transactions = await loadUserTransactions(req.user.id);
+
+      // If no transactions, return empty state
+      if (transactions.length === 0) {
+        return res.json({
+          success: true,
+          hasData: false,
+          transactions: [],
+          positions: [],
+          rollChains: [],
+          summary: {
+            totalPL: 0,
+            realizedPL: 0,
+            openPositionsCount: 0,
+            closedPositionsCount: 0,
+            totalPremiumCollected: 0,
+            winRate: 0,
+            totalWins: 0,
+            totalLosses: 0,
+          },
+        });
+      }
+
+      // Build positions and detect rolls
+      const { positions, rolls, rollChains } = buildPositions(transactions);
+
+      // Calculate summary statistics
+      const summary = calculateSummary(positions);
+
+      // Update transaction strategy tags
+      transactions.forEach((txn) => {
+        const position = positions.find((p) => p.transactionIds.includes(txn.id));
+        if (position) {
+          txn.positionId = position.id;
+          txn.strategyTag = position.strategyType;
+        }
+      });
+
+      // Sort transactions and positions by date (most recent first)
+      transactions.sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime());
+      positions.sort((a, b) => new Date(b.entryDate).getTime() - new Date(a.entryDate).getTime());
+
+      return res.json({
+        success: true,
+        hasData: true,
+        transactions,
+        positions,
+        rollChains,
+        summary,
+      });
+    } catch (error) {
+      console.error('Get user data error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to load user data',
+      });
+    }
+  });
+
   // Update user display name
   app.put('/api/user/display-name', async (req, res) => {
     try {
