@@ -188,3 +188,23 @@ Preferred communication style: Simple, everyday language.
 - `@replit/vite-plugin-*` - Replit-specific development enhancements (error overlay, cartographer, dev banner)
 - Custom Vite configuration with path aliases (`@/`, `@shared/`, `@assets/`)
 - TypeScript with strict mode enabled and ESNext module resolution
+
+## State Management Patterns
+
+### Race Condition Protection
+The application uses refs to guard against race conditions during async operations:
+- `isLoggedInRef` - Guards `loadUserData`, `handleFileUpload`, and `handleImportComplete` by checking if user logged out during the async operation
+- Guards check `startedLoggedIn && !isLoggedInRef.current` to discard results if logout occurred mid-flight
+
+### Transition-Based Logout Detection
+Data clearing on logout uses `prevUserRef` to detect actual logout transitions:
+- `wasLoggedIn = !!prevUserRef.current` - Was there a user before?
+- `isLoggedOut = !user` - Is there no user now?
+- Only clears data when `wasLoggedIn && isLoggedOut`
+- Prevents clearing data for anonymous users who were never logged in
+
+### Auto-Load on Login
+When authenticated users sign in:
+- Retry mechanism with MAX_LOAD_ATTEMPTS=3 and 1000ms delays between attempts
+- Handles transient auth settling issues gracefully
+- Counters reset on logout for fresh retry budget per session
