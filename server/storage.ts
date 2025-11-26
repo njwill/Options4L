@@ -1,11 +1,11 @@
 import { createHash } from 'crypto';
 import { db } from './db';
 import { dbTransactions, uploads, type DbTransaction } from '@shared/schema';
-import { eq, and, count, asc, sql } from 'drizzle-orm';
+import { eq, and, count, asc, sql, max } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
 /**
- * Compute a hash for a transaction to use for deduplication
+ * Compute a content-based hash for a transaction to use for deduplication
  */
 export function computeTransactionHash(txn: RawTransaction | Transaction): string {
   // Use key fields that uniquely identify a transaction
@@ -40,15 +40,51 @@ export async function saveTransactionsToDatabase(
   let newCount = 0;
   let duplicateCount = 0;
   
+  // Pre-fetch ALL existing (hash, occurrence) pairs for this user
+  // This allows us to detect exact duplicates while allowing same-content transactions
+  const existingPairs = await db
+    .select({
+      transactionHash: dbTransactions.transactionHash,
+      occurrence: dbTransactions.occurrence,
+    })
+    .from(dbTransactions)
+    .where(eq(dbTransactions.userId, userId));
+  
+  // Build a Set of existing "hash:occurrence" pairs for fast lookup
+  const existingSet = new Set<string>();
+  for (const row of existingPairs) {
+    existingSet.add(`${row.transactionHash}:${row.occurrence}`);
+  }
+  
+  // Track local occurrence counts for this batch (for same-content transactions within file)
+  const localOccurrenceCount = new Map<string, number>();
+  
   for (const txn of transactions) {
     const transactionHash = computeTransactionHash(txn);
     
+    // Get local count for this hash in current batch (starts at 0)
+    const localCount = localOccurrenceCount.get(transactionHash) ?? 0;
+    
+    // The occurrence for this transaction is simply localCount
+    // (0 for first, 1 for second, etc. within this file)
+    const occurrence = localCount;
+    
+    // Check if this exact (hash, occurrence) already exists in DB
+    const pairKey = `${transactionHash}:${occurrence}`;
+    if (existingSet.has(pairKey)) {
+      // This is a duplicate - same transaction was uploaded before
+      duplicateCount++;
+      // Still increment local count so next same-hash transaction gets correct occurrence
+      localOccurrenceCount.set(transactionHash, localCount + 1);
+      continue;
+    }
+    
     try {
-      // Attempt to insert transaction
       await db.insert(dbTransactions).values({
         userId,
         uploadId,
         transactionHash,
+        occurrence,
         activityDate: txn.activityDate,
         processDate: '',
         settleDate: '',
@@ -65,10 +101,16 @@ export async function saveTransactionsToDatabase(
       });
       
       newCount++;
+      // Update local count for next same-hash transaction in this batch
+      localOccurrenceCount.set(transactionHash, localCount + 1);
+      // Also add to existingSet to prevent constraint errors within batch
+      existingSet.add(pairKey);
+      
     } catch (error: any) {
       // Check if this is a duplicate key error (unique constraint violation)
       if (error.code === '23505' && error.constraint === 'user_transaction_hash_idx') {
         duplicateCount++;
+        localOccurrenceCount.set(transactionHash, localCount + 1);
       } else {
         // Re-throw other errors
         throw error;

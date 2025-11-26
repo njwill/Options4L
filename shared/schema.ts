@@ -244,6 +244,10 @@ export const dbTransactions = pgTable("transactions", {
   // Transaction hash for deduplication (computed from key fields)
   transactionHash: varchar("transaction_hash", { length: 64 }).notNull(),
   
+  // Occurrence number for handling multiple transactions with same content
+  // (e.g., two identical option trades on same day at same price)
+  occurrence: integer("occurrence").notNull().default(0),
+  
   // Raw transaction fields
   activityDate: varchar("activity_date", { length: 50 }).notNull(),
   processDate: varchar("process_date", { length: 50 }),
@@ -263,8 +267,8 @@ export const dbTransactions = pgTable("transactions", {
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
-  // Unique constraint to prevent duplicate transactions per user
-  userTransactionHashIdx: uniqueIndex("user_transaction_hash_idx").on(table.userId, table.transactionHash),
+  // Unique constraint includes occurrence to allow multiple same-content transactions
+  userTransactionHashIdx: uniqueIndex("user_transaction_hash_idx").on(table.userId, table.transactionHash, table.occurrence),
 }));
 
 export type DbTransaction = typeof dbTransactions.$inferSelect;
