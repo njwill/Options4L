@@ -454,7 +454,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Response: { status: "OK", ticker: { ticker, day, prevDay, todaysChange, todaysChangePerc, ... } }
       for (const symbol of limitedSymbols) {
         try {
-          const url = `https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(symbol)}?apiKey=${apiKey}`;
+          // Use api.polygon.io domain - Massive.com rebranded from Polygon.io but keys work on both
+          const url = `https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(symbol)}?apiKey=${apiKey}`;
           const response = await fetch(url);
           const data = await response.json();
 
@@ -595,7 +596,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const symbol of limitedSymbols) {
         try {
           // Massive.com API endpoint for options chain snapshot
-          const url = `https://api.massive.com/v3/snapshot/options/${encodeURIComponent(symbol)}?apiKey=${apiKey}&limit=250`;
+          // Use api.polygon.io domain - Massive.com rebranded from Polygon.io but keys work on both
+          const url = `https://api.polygon.io/v3/snapshot/options/${encodeURIComponent(symbol)}?apiKey=${apiKey}&limit=250`;
           console.log(`[Greeks DEBUG] Fetching: ${url.replace(apiKey, '***')}`);
           
           let response;
