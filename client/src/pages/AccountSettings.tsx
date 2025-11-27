@@ -758,23 +758,23 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
         <CardHeader>
           <CardTitle>Market Data API</CardTitle>
           <CardDescription>
-            Connect your Alpha Vantage API key to fetch live option prices for your open positions
+            Connect your Massive.com API key to fetch live option prices and Greeks for your open positions
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-sm text-muted-foreground">
             Get a free API key from{' '}
             <a 
-              href="https://www.alphavantage.co/support/#api-key" 
+              href="https://massive.com/pricing" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-primary hover:underline inline-flex items-center gap-1"
-              data-testid="link-alpha-vantage"
+              data-testid="link-massive-api"
             >
-              Alpha Vantage
+              Massive.com
               <ExternalLink className="w-3 h-3" />
             </a>
-            {' '}(free tier: 25 requests/day)
+            {' '}(free tier: 5 calls/minute, includes options data with Greeks)
           </div>
           
           {hasApiKey ? (
@@ -830,7 +830,7 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
                     <AlertDialogHeader>
                       <AlertDialogTitle>Remove API Key</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Are you sure you want to remove your Alpha Vantage API key? You will no longer be able to fetch live option prices.
+                        Are you sure you want to remove your Massive.com API key? You will no longer be able to fetch live option prices and Greeks.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -853,7 +853,7 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
                     type={showApiKey ? 'text' : 'password'}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Enter your Alpha Vantage API key"
+                    placeholder="Enter your Massive.com API key"
                     maxLength={32}
                     data-testid="input-api-key"
                   />
