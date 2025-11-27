@@ -31,8 +31,9 @@ export function UserMenu({ onAccountClick }: UserMenuProps) {
     .toUpperCase()
     .slice(0, 2);
 
-  const npub = hexToNpub(user.nostrPubkey);
-  const shortPubkey = truncateNpub(npub);
+  const userIdentifier = user.nostrPubkey 
+    ? truncateNpub(hexToNpub(user.nostrPubkey))
+    : user.email || '';
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -59,7 +60,7 @@ export function UserMenu({ onAccountClick }: UserMenuProps) {
         <DropdownMenuLabel>
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium">{displayName}</p>
-            <p className="text-xs text-muted-foreground font-mono">{shortPubkey}</p>
+            <p className="text-xs text-muted-foreground font-mono">{userIdentifier}</p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

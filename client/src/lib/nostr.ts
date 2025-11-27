@@ -9,7 +9,8 @@ export function hexToNpub(hexPubkey: string): string {
   }
 }
 
-export function truncateNpub(npub: string): string {
+export function truncateNpub(npub: string | null | undefined): string {
+  if (!npub) return '';
   if (npub.length <= 20) return npub;
   return `${npub.slice(0, 12)}...${npub.slice(-8)}`;
 }
