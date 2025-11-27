@@ -220,6 +220,7 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 255 }),  // Unique constraint handled via partial index
   emailVerified: boolean("email_verified").default(false),
   displayName: varchar("display_name", { length: 100 }),
+  alphaVantageApiKey: varchar("alpha_vantage_api_key", { length: 32 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
 });
