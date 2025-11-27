@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { db } from './db';
 import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping } from '@shared/schema';
-import { eq, and, count, asc, desc, sql, max } from 'drizzle-orm';
+import { eq, and, count, asc, desc, sql, max, inArray } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
 /**
@@ -301,7 +301,7 @@ export async function getCommentCounts(
     .from(comments)
     .where(and(
       eq(comments.userId, userId),
-      sql`${comments.transactionHash} = ANY(${transactionHashes})`
+      inArray(comments.transactionHash, transactionHashes)
     ))
     .groupBy(comments.transactionHash);
   
@@ -415,7 +415,7 @@ export async function getPositionCommentCounts(
     .from(positionComments)
     .where(and(
       eq(positionComments.userId, userId),
-      sql`${positionComments.positionHash} = ANY(${positionHashes})`
+      inArray(positionComments.positionHash, positionHashes)
     ))
     .groupBy(positionComments.positionHash);
   
