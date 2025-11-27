@@ -11,13 +11,13 @@ A comprehensive trading analysis application designed to process Robinhood tradi
 - Roll detection and chain linking across related positions
 - Real-time P/L calculations and performance metrics
 - Interactive dashboard with filtering and detailed position views
-- **NEW:** NOSTR authentication for persistent data storage
-- **NEW:** Transaction deduplication for authenticated users
-- **NEW:** Session import to save anonymous data after login
-- **NEW:** Account management with upload history and data export
-- **NEW:** Transaction comments - add notes to individual trades (authenticated users only)
-- **NEW:** Position comments - add notes to open/closed positions (authenticated users only)
-- **NEW:** Comment notification badges - blue circular badges show comment counts on MessageSquare icons
+- **Dual Authentication:** NOSTR (NIP-07) and Email (magic link) authentication options
+- Transaction deduplication for authenticated users
+- Session import to save anonymous data after login
+- Account management with upload history and data export
+- Transaction comments - add notes to individual trades (authenticated users only)
+- Position comments - add notes to open/closed positions (authenticated users only)
+- Comment notification badges - blue circular badges show comment counts on MessageSquare icons
 
 ## User Preferences
 
@@ -118,7 +118,10 @@ Preferred communication style: Simple, everyday language.
 - Privacy-focused - no data persisted to database
 
 **Authenticated Mode (Optional):**
-- NOSTR authentication via NIP-07 browser extensions (nos2x, Alby, Flamingo)
+- **NOSTR authentication** via NIP-07 browser extensions (nos2x, Alby, Flamingo)
+- **Email authentication** via magic link (passwordless, 15-minute token expiration)
+  - Requires SMTP configuration (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM)
+  - Uses user's own SMTP server for sending login emails
 - PostgreSQL storage using Drizzle ORM
 - Persistent data across sessions
 - Transaction deduplication using hash (activityDate, instrument, transCode, quantity, price, amount)
@@ -126,13 +129,24 @@ Preferred communication style: Simple, everyday language.
 - Session import feature to save anonymous data after login
 - Account management: display name editing, data export to CSV
 
-**Authentication Flow:**
+**Authentication Flows:**
+
+*NOSTR Authentication:*
 1. User clicks "Sign in with NOSTR"
 2. Backend generates challenge (nonce)
 3. Frontend creates NOSTR event (kind 27235) with challenge
 4. NIP-07 extension signs the event
 5. Backend verifies signature and issues JWT in httpOnly cookie
 6. User remains authenticated across sessions
+
+*Email Authentication (Magic Link):*
+1. User clicks "Sign in" and selects Email tab
+2. User enters email address and clicks "Send Login Link"
+3. Backend generates secure token (64 chars), stores with 15-min expiry
+4. Email with magic link sent via configured SMTP server
+5. User clicks link, redirected to /auth/verify?token=xxx
+6. Backend verifies token, creates/finds user, issues JWT
+7. User remains authenticated across sessions
 
 **Deduplication Strategy:**
 - Hash constructed from 6 transaction fields for uniqueness
@@ -159,6 +173,7 @@ Preferred communication style: Simple, everyday language.
 **Authentication:**
 - `jsonwebtoken` - JWT token generation and verification
 - `cookie-parser` - Cookie middleware for Express
+- `nodemailer` - Email sending for magic link authentication
 
 **Backend:**
 - `multer` - File upload middleware
@@ -176,12 +191,13 @@ Preferred communication style: Simple, everyday language.
 
 **Migration Setup:** Schema defined in `shared/schema.ts` with migration output to `./migrations` directory. Database connection via `DATABASE_URL` environment variable.
 
-**Active Usage:** Database is used for authenticated user data with five main tables:
-- `users` - NOSTR public keys, display names, creation timestamps
+**Active Usage:** Database is used for authenticated user data with six main tables:
+- `users` - NOSTR public keys, email addresses, display names, creation timestamps
 - `uploads` - Upload metadata (filename, date, transaction counts)
 - `transactions` - Individual transaction records with deduplication hash
 - `comments` - User notes on transactions, linked by transactionHash for persistence across re-uploads
 - `positionComments` - User notes on positions, linked by positionHash for persistence across re-uploads
+- `email_verification_tokens` - Magic link tokens for email authentication (auto-expire after 15 minutes)
 
 **Schema Highlights:**
 - User-scoped data isolation via foreign keys
