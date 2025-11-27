@@ -569,6 +569,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Log the raw response for debugging
           console.log(`[Greeks] ${symbol} raw response keys:`, Object.keys(data));
+          if (data['Information']) {
+            console.log(`[Greeks] ${symbol} info message:`, data['Information']);
+            errors.push(`${symbol}: ${data['Information']}`);
+            // Mark all legs for this symbol as unavailable with specific message
+            for (const leg of symbolGroups[symbol]) {
+              optionData[leg.legId] = {
+                symbol: leg.symbol,
+                strike: leg.strike,
+                expiration: leg.expiration,
+                type: leg.type,
+                error: data['Information'],
+              };
+            }
+            continue; // Skip to next symbol
+          }
           if (data['Error Message']) {
             console.log(`[Greeks] ${symbol} error:`, data['Error Message']);
           }
