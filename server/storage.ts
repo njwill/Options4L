@@ -895,16 +895,20 @@ export async function mergeUserAccounts(
   
   if (fromUser && toUser) {
     const updates: Partial<User> = {};
+    const clearFromSource: Partial<User> = {};
     
     // Copy NOSTR pubkey if target doesn't have one
     if (fromUser.nostrPubkey && !toUser.nostrPubkey) {
       updates.nostrPubkey = fromUser.nostrPubkey;
+      clearFromSource.nostrPubkey = null;
     }
     
     // Copy email if target doesn't have one
     if (fromUser.email && !toUser.email) {
       updates.email = fromUser.email;
       updates.emailVerified = fromUser.emailVerified;
+      clearFromSource.email = null;
+      clearFromSource.emailVerified = null;
     }
     
     // Copy display name if target doesn't have one
@@ -912,6 +916,12 @@ export async function mergeUserAccounts(
       updates.displayName = fromUser.displayName;
     }
     
+    // First, clear the auth methods from source user to avoid unique constraint violations
+    if (Object.keys(clearFromSource).length > 0) {
+      await db.update(users).set(clearFromSource).where(eq(users.id, fromUserId));
+    }
+    
+    // Now we can safely set them on the target user
     if (Object.keys(updates).length > 0) {
       await db.update(users).set(updates).where(eq(users.id, toUserId));
     }
