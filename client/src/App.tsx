@@ -13,6 +13,8 @@ import ClosedPositions from '@/pages/ClosedPositions';
 import TransactionHistory from '@/pages/TransactionHistory';
 import AccountSettings from '@/pages/AccountSettings';
 import { EmailVerify } from '@/pages/EmailVerify';
+import PrivacyPolicy from '@/pages/PrivacyPolicy';
+import TermsOfService from '@/pages/TermsOfService';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { LoginModal } from '@/components/LoginModal';
 import { UserMenu } from '@/components/UserMenu';
@@ -453,6 +455,24 @@ function AppContent() {
               <p className="text-xs text-muted-foreground text-center leading-relaxed" data-testid="text-disclaimer">
                 Options involve a high degree of risk and are not suitable for all investors. Options4L.com is not an investment advisor. The calculations, information, and opinions on this site are for educational purposes only and are not investment advice. Calculations are estimates and do not account for all market conditions and events.
               </p>
+              <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+                <a href="/privacy" className="hover:text-foreground hover:underline" data-testid="link-privacy">
+                  Privacy Policy
+                </a>
+                <span>·</span>
+                <a href="/terms" className="hover:text-foreground hover:underline" data-testid="link-terms">
+                  Terms of Service
+                </a>
+                <span>·</span>
+                <a 
+                  href="https://github.com/njwill/Options4L" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="hover:text-foreground hover:underline"
+                >
+                  GitHub
+                </a>
+              </div>
             </div>
           </footer>
         </div>
@@ -491,6 +511,8 @@ function App() {
     <AuthProvider>
       <Switch>
         <Route path="/auth/verify" component={EmailVerifyRoute} />
+        <Route path="/privacy" component={PrivacyPolicy} />
+        <Route path="/terms" component={TermsOfService} />
         <Route path="/" component={AppContent} />
         <Route component={AppContent} />
       </Switch>
