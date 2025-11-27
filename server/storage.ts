@@ -953,3 +953,60 @@ export async function getUserByIdFromStorage(userId: string): Promise<User | nul
   
   return user || null;
 }
+
+/**
+ * Unlink an authentication method from a user account
+ * Requires that the user has at least one other auth method to fall back on
+ */
+export async function unlinkAuthMethod(
+  userId: string,
+  method: 'nostr' | 'email'
+): Promise<{ success: boolean; error?: string; user?: User }> {
+  // Get the current user
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  
+  if (!user) {
+    return { success: false, error: 'User not found' };
+  }
+  
+  // Check that user has at least 2 auth methods before unlinking
+  const hasNostr = !!user.nostrPubkey;
+  const hasEmail = !!user.email;
+  const authMethodCount = (hasNostr ? 1 : 0) + (hasEmail ? 1 : 0);
+  
+  if (authMethodCount < 2) {
+    return { 
+      success: false, 
+      error: 'Cannot unlink - you must keep at least one authentication method' 
+    };
+  }
+  
+  // Check that the method being unlinked actually exists
+  if (method === 'nostr' && !hasNostr) {
+    return { success: false, error: 'NOSTR is not linked to this account' };
+  }
+  if (method === 'email' && !hasEmail) {
+    return { success: false, error: 'Email is not linked to this account' };
+  }
+  
+  // Perform the unlink
+  const updates: Partial<User> = {};
+  if (method === 'nostr') {
+    updates.nostrPubkey = null;
+  } else {
+    updates.email = null;
+    updates.emailVerified = null;
+  }
+  
+  const [updatedUser] = await db
+    .update(users)
+    .set(updates)
+    .where(eq(users.id, userId))
+    .returning();
+  
+  return { success: true, user: updatedUser };
+}

@@ -18,6 +18,7 @@ import {
   linkEmailToUser,
   mergeUserAccounts,
   getUserByIdFromStorage,
+  unlinkAuthMethod,
 } from './storage';
 import { sendMagicLinkEmail, isEmailConfigured } from './emailService';
 import './types';
@@ -548,6 +549,84 @@ router.post('/merge', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Merge accounts error:', error);
     res.status(500).json({ error: 'Failed to merge accounts' });
+  }
+});
+
+/**
+ * POST /api/auth/unlink/nostr
+ * Unlink NOSTR authentication from the current user account
+ * Requires that the user has another auth method (email) to fall back on
+ */
+router.post('/unlink/nostr', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    const result = await unlinkAuthMethod(req.user.id, 'nostr');
+    
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    // Generate new JWT without the NOSTR pubkey
+    const token = generateToken(result.user!);
+    
+    // Set updated cookie
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    
+    res.json({
+      success: true,
+      message: 'NOSTR authentication unlinked successfully',
+      user: result.user,
+    });
+  } catch (error) {
+    console.error('Unlink NOSTR error:', error);
+    res.status(500).json({ error: 'Failed to unlink NOSTR authentication' });
+  }
+});
+
+/**
+ * POST /api/auth/unlink/email
+ * Unlink email authentication from the current user account
+ * Requires that the user has another auth method (NOSTR) to fall back on
+ */
+router.post('/unlink/email', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    const result = await unlinkAuthMethod(req.user.id, 'email');
+    
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    
+    // Generate new JWT without the email
+    const token = generateToken(result.user!);
+    
+    // Set updated cookie
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    
+    res.json({
+      success: true,
+      message: 'Email authentication unlinked successfully',
+      user: result.user,
+    });
+  } catch (error) {
+    console.error('Unlink email error:', error);
+    res.status(500).json({ error: 'Failed to unlink email authentication' });
   }
 });
 

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Save, Clock, FileText, Trash2, Link2, Check, Mail, Key, Loader2 } from 'lucide-react';
+import { Download, Save, Clock, FileText, Trash2, Link2, Unlink, Check, Mail, Key, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { hexToNpub, truncateNpub } from '@/lib/nostr';
 import {
@@ -70,6 +70,10 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [mergeConflictUserId, setMergeConflictUserId] = useState<string | null>(null);
   const [isMerging, setIsMerging] = useState(false);
+  
+  // Account unlinking state
+  const [isUnlinkingNostr, setIsUnlinkingNostr] = useState(false);
+  const [isUnlinkingEmail, setIsUnlinkingEmail] = useState(false);
 
   useEffect(() => {
     fetchProfileData();
@@ -357,6 +361,70 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
     }
   };
 
+  // Unlink NOSTR handler
+  const handleUnlinkNostr = async () => {
+    setIsUnlinkingNostr(true);
+    try {
+      const res = await fetch('/api/auth/unlink/nostr', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to unlink NOSTR');
+
+      toast({
+        title: 'NOSTR Unlinked',
+        description: 'NOSTR authentication has been removed from your account.',
+      });
+      
+      refreshUser();
+      fetchProfileData();
+    } catch (error) {
+      console.error('Unlink NOSTR error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to unlink NOSTR',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUnlinkingNostr(false);
+    }
+  };
+
+  // Unlink Email handler
+  const handleUnlinkEmail = async () => {
+    setIsUnlinkingEmail(true);
+    try {
+      const res = await fetch('/api/auth/unlink/email', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to unlink email');
+
+      toast({
+        title: 'Email Unlinked',
+        description: 'Email authentication has been removed from your account.',
+      });
+      
+      refreshUser();
+      fetchProfileData();
+    } catch (error) {
+      console.error('Unlink email error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to unlink email',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUnlinkingEmail(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -414,9 +482,44 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
               </div>
             </div>
             {hasNostr ? (
-              <div className="flex items-center gap-2 text-primary">
-                <Check className="w-4 h-4" />
-                <span className="text-sm">Linked</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-primary">
+                  <Check className="w-4 h-4" />
+                  <span className="text-sm">Linked</span>
+                </div>
+                {hasEmail && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        disabled={isUnlinkingNostr}
+                        data-testid="button-unlink-nostr"
+                      >
+                        {isUnlinkingNostr ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Unlink className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Unlink NOSTR?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will remove NOSTR login from your account. You will still be able to log in with your email address.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleUnlinkNostr}>
+                          Unlink NOSTR
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </div>
             ) : (
               <Button
@@ -453,9 +556,44 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
               </div>
             </div>
             {hasEmail ? (
-              <div className="flex items-center gap-2 text-primary">
-                <Check className="w-4 h-4" />
-                <span className="text-sm">Linked</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-primary">
+                  <Check className="w-4 h-4" />
+                  <span className="text-sm">Linked</span>
+                </div>
+                {hasNostr && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        disabled={isUnlinkingEmail}
+                        data-testid="button-unlink-email"
+                      >
+                        {isUnlinkingEmail ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Unlink className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Unlink Email?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will remove email login from your account. You will still be able to log in with NOSTR.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleUnlinkEmail}>
+                          Unlink Email
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </div>
             ) : (
               <Button
