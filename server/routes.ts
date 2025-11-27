@@ -559,9 +559,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Fetch options chain for each unique symbol
+      // Note: Using HISTORICAL_OPTIONS which works on free tier (REALTIME_OPTIONS requires premium)
+      // Omitting date parameter returns the most recent trading session's data
       for (const symbol of limitedSymbols) {
         try {
-          const url = `https://www.alphavantage.co/query?function=REALTIME_OPTIONS&symbol=${encodeURIComponent(symbol)}&require_greeks=true&apikey=${apiKey}`;
+          const url = `https://www.alphavantage.co/query?function=HISTORICAL_OPTIONS&symbol=${encodeURIComponent(symbol)}&require_greeks=true&apikey=${apiKey}`;
           const response = await fetch(url);
           const data = await response.json();
 
@@ -579,15 +581,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const optionsChain = data.data || [];
           chainCache[symbol] = optionsChain;
           
-          // Debug: Log a sample contract to see the format
+          // Log some basic info about the chain
+          console.log(`[Greeks] ${symbol}: Received ${optionsChain.length} contracts`);
+          
+          // Check if we got valid data or placeholder data from Alpha Vantage
           if (optionsChain.length > 0) {
-            console.log(`[Greeks Debug] Sample contract from ${symbol}:`, {
-              expiration: optionsChain[0].expiration,
-              type: optionsChain[0].type,
-              strike: optionsChain[0].strike,
-            });
+            const sampleContract = optionsChain[0];
+            const sampleExpiration = sampleContract.expiration || '';
+            console.log(`[Greeks] ${symbol} sample: exp=${sampleExpiration}, strike=${sampleContract.strike}, type=${sampleContract.type}`);
+            
+            // Alpha Vantage free tier returns placeholder data like "2099-99-99"
+            if (sampleExpiration.includes('2099') || sampleExpiration === '2099-99-99') {
+              console.log(`[Greeks] Alpha Vantage returned placeholder data for ${symbol} - premium subscription may be required`);
+              errors.push(`Options data for ${symbol} requires Alpha Vantage premium subscription`);
+              // Mark all legs for this symbol as unavailable
+              for (const leg of symbolGroups[symbol]) {
+                optionData[leg.legId] = {
+                  symbol: leg.symbol,
+                  strike: leg.strike,
+                  expiration: leg.expiration,
+                  type: leg.type,
+                  error: 'Alpha Vantage premium subscription required for real-time options data',
+                };
+              }
+              continue; // Skip to next symbol
+            }
+            
+            // Log available expirations
+            const availableExpirations = new Set(optionsChain.map((c: any) => c.expiration));
+            console.log(`[Greeks] ${symbol} available expirations: ${Array.from(availableExpirations).slice(0, 10).join(', ')}`);
           } else {
-            console.log(`[Greeks Debug] No options chain data for ${symbol}`);
+            console.log(`[Greeks] No options chain data returned for ${symbol}`);
           }
 
           // Match user's requested contracts from the chain
@@ -597,7 +621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const normalizedExpiration = normalizeDate(leg.expiration);
             const legType = leg.type.toLowerCase();
             
-            console.log(`[Greeks Debug] Looking for: expiration=${normalizedExpiration}, type=${legType}, strike=${leg.strike}`);
+            console.log(`[Greeks] Looking for: ${symbol} ${normalizedExpiration} ${leg.strike} ${legType}`);
             
             // Find matching contract in chain
             const matchedContract = optionsChain.find((contract: any) => {
