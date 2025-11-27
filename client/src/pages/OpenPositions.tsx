@@ -25,6 +25,28 @@ interface StockQuote {
   latestTradingDay: string;
 }
 
+interface OptionLegData {
+  symbol: string;
+  strike: number;
+  expiration: string;
+  type: string;
+  contractId?: string;
+  bid: number;
+  ask: number;
+  last: number;
+  mark: number;
+  delta: number | null;
+  gamma: number | null;
+  theta: number | null;
+  vega: number | null;
+  rho: number | null;
+  impliedVolatility: number | null;
+  volume: number;
+  openInterest: number;
+  underlyingPrice: number | null;
+  error?: string;
+}
+
 interface OpenPositionsProps {
   positions: Position[];
   rollChains: RollChain[];
@@ -45,6 +67,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   
   // Live price state
   const [liveQuotes, setLiveQuotes] = useState<Record<string, StockQuote>>({});
+  const [optionData, setOptionData] = useState<Record<string, OptionLegData>>({});
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
   const [quotesError, setQuotesError] = useState<string | null>(null);
   const [lastQuoteUpdate, setLastQuoteUpdate] = useState<Date | null>(null);
@@ -129,7 +152,31 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     }
   };
   
-  // Fetch live quotes for underlying symbols
+  // Build leg requests from positions for options chain API
+  const buildLegRequests = () => {
+    const legs: { symbol: string; strike: number; expiration: string; type: 'call' | 'put'; legId: string }[] = [];
+    
+    for (const pos of openPositions) {
+      if (pos.legs && Array.isArray(pos.legs)) {
+        for (let i = 0; i < pos.legs.length; i++) {
+          const leg = pos.legs[i];
+          if (leg && leg.strike && leg.expiration && leg.optionType) {
+            legs.push({
+              symbol: pos.symbol,
+              strike: leg.strike,
+              expiration: leg.expiration,
+              type: leg.optionType.toLowerCase() as 'call' | 'put',
+              legId: `${pos.id}-leg-${i}`,
+            });
+          }
+        }
+      }
+    }
+    
+    return legs;
+  };
+
+  // Fetch live quotes for underlying symbols and options chain with Greeks
   const fetchLiveQuotes = async () => {
     if (!isAuthenticated) {
       toast({
@@ -146,47 +193,91 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     setIsLoadingQuotes(true);
     setQuotesError(null);
     
+    const allErrors: string[] = [];
+    
     try {
-      // Fetch in batches of 5 (API limit)
-      const allQuotes: Record<string, StockQuote> = {};
+      // Build leg requests for options chain
+      const legRequests = buildLegRequests();
       
-      for (let i = 0; i < uniqueSymbols.length; i += 5) {
-        const batch = uniqueSymbols.slice(i, i + 5);
-        const response = await apiRequest('POST', '/api/options/quotes', { symbols: batch });
-        const data = await response.json();
+      // Fetch options chain data with Greeks (groups by symbol internally)
+      if (legRequests.length > 0) {
+        const chainResponse = await apiRequest('POST', '/api/options/chain', { legs: legRequests });
+        const chainData = await chainResponse.json();
         
-        if (data.success && data.quotes) {
-          Object.assign(allQuotes, data.quotes);
+        if (chainData.success && chainData.optionData) {
+          setOptionData(chainData.optionData);
+          
+          // Extract underlying prices from options data
+          const underlyingPrices: Record<string, StockQuote> = {};
+          Object.values(chainData.optionData as Record<string, OptionLegData>).forEach((leg) => {
+            if (leg.underlyingPrice && !underlyingPrices[leg.symbol]) {
+              underlyingPrices[leg.symbol] = {
+                symbol: leg.symbol,
+                price: leg.underlyingPrice,
+                change: 0,
+                changePercent: '0',
+                previousClose: 0,
+                latestTradingDay: '',
+              };
+            }
+          });
+          setLiveQuotes(underlyingPrices);
         }
         
-        if (data.errors && data.errors.length > 0) {
-          // Check if it's a rate limit error
-          if (data.errors.some((e: string) => e.includes('Rate limit'))) {
+        if (chainData.errors && chainData.errors.length > 0) {
+          allErrors.push(...chainData.errors);
+          if (chainData.errors.some((e: string) => e.includes('Rate limit'))) {
             setQuotesError('API rate limit reached. Try again in a minute.');
-            break;
           }
         }
         
-        if (!data.success && data.message) {
-          setQuotesError(data.message);
-          break;
+        if (!chainData.success && chainData.message) {
+          setQuotesError(chainData.message);
+        }
+      } else {
+        // No option legs, just fetch stock quotes for stock positions
+        const allQuotes: Record<string, StockQuote> = {};
+        
+        for (let i = 0; i < uniqueSymbols.length; i += 5) {
+          const batch = uniqueSymbols.slice(i, i + 5);
+          const response = await apiRequest('POST', '/api/options/quotes', { symbols: batch });
+          const data = await response.json();
+          
+          if (data.success && data.quotes) {
+            Object.assign(allQuotes, data.quotes);
+          }
+          
+          if (data.errors && data.errors.length > 0) {
+            allErrors.push(...data.errors);
+            if (data.errors.some((e: string) => e.includes('Rate limit'))) {
+              setQuotesError('API rate limit reached. Try again in a minute.');
+              break;
+            }
+          }
+          
+          if (!data.success && data.message) {
+            setQuotesError(data.message);
+            break;
+          }
+          
+          if (i + 5 < uniqueSymbols.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
         }
         
-        // Small delay between batches to avoid rate limiting
-        if (i + 5 < uniqueSymbols.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+        setLiveQuotes(allQuotes);
       }
       
-      setLiveQuotes(allQuotes);
       setLastQuoteUpdate(new Date());
       
-      if (Object.keys(allQuotes).length > 0) {
-        toast({
-          title: 'Prices updated',
-          description: `Fetched live prices for ${Object.keys(allQuotes).length} symbol(s)`,
-        });
-      }
+      const symbolCount = uniqueSymbols.length;
+      const legCount = legRequests.length;
+      toast({
+        title: 'Market data updated',
+        description: legCount > 0 
+          ? `Fetched Greeks for ${legCount} option leg(s) across ${symbolCount} symbol(s)`
+          : `Fetched prices for ${symbolCount} symbol(s)`,
+      });
     } catch (error) {
       console.error('Failed to fetch quotes:', error);
       const message = error instanceof Error ? error.message : 'Failed to fetch live prices';
@@ -241,6 +332,33 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const getRollChainForPosition = (position: Position): RollChain | null => {
     if (!position.rollChainId) return null;
     return rollChains.find((chain) => chain.chainId === position.rollChainId) || null;
+  };
+
+  // Helper to get aggregated Greeks for a position's legs
+  const getPositionGreeks = (position: Position): {
+    legs: { legId: string; data: OptionLegData | null; legInfo: any }[];
+    hasData: boolean;
+  } => {
+    const legsData: { legId: string; data: OptionLegData | null; legInfo: any }[] = [];
+    
+    if (position.legs && Array.isArray(position.legs)) {
+      position.legs.forEach((leg, i) => {
+        const legId = `${position.id}-leg-${i}`;
+        const data = optionData[legId] || null;
+        legsData.push({ legId, data, legInfo: leg });
+      });
+    }
+    
+    return {
+      legs: legsData,
+      hasData: legsData.some(l => l.data && !l.data.error),
+    };
+  };
+
+  // Format Greek value for display
+  const formatGreek = (value: number | null, decimals: number = 4): string => {
+    if (value === null || value === undefined) return '-';
+    return value.toFixed(decimals);
   };
 
   const columns: Column<Position>[] = [
@@ -347,6 +465,76 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       },
       className: 'text-right',
     },
+    {
+      key: 'greeks',
+      header: 'Greeks',
+      accessor: (row) => {
+        const greeksInfo = getPositionGreeks(row);
+        
+        if (!greeksInfo.hasData) {
+          return <span className="text-muted-foreground text-xs">-</span>;
+        }
+        
+        return (
+          <div className="flex flex-col gap-0.5">
+            {greeksInfo.legs.map(({ legId, data, legInfo }) => {
+              if (!data || data.error) {
+                return null;
+              }
+              
+              const legLabel = `${legInfo.strike}${legInfo.optionType?.[0]?.toUpperCase() || ''}`;
+              
+              return (
+                <Tooltip key={legId}>
+                  <TooltipTrigger asChild>
+                    <div className="text-xs cursor-help">
+                      <span className="text-muted-foreground mr-1">{legLabel}:</span>
+                      <span className="tabular-nums font-medium">
+                        Δ{formatGreek(data.delta, 2)}
+                      </span>
+                      {data.impliedVolatility && (
+                        <span className="tabular-nums text-muted-foreground ml-1">
+                          IV:{(data.impliedVolatility * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <div className="text-sm space-y-1">
+                      <div className="font-medium mb-2">
+                        {data.symbol} ${data.strike} {data.type?.toUpperCase()} {data.expiration}
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <div>Delta: <span className="tabular-nums font-medium">{formatGreek(data.delta)}</span></div>
+                        <div>Gamma: <span className="tabular-nums font-medium">{formatGreek(data.gamma)}</span></div>
+                        <div>Theta: <span className="tabular-nums font-medium">{formatGreek(data.theta)}</span></div>
+                        <div>Vega: <span className="tabular-nums font-medium">{formatGreek(data.vega)}</span></div>
+                        <div>Rho: <span className="tabular-nums font-medium">{formatGreek(data.rho)}</span></div>
+                        <div>IV: <span className="tabular-nums font-medium">{data.impliedVolatility ? `${(data.impliedVolatility * 100).toFixed(1)}%` : '-'}</span></div>
+                      </div>
+                      <div className="border-t pt-1 mt-2 grid grid-cols-2 gap-x-4 text-xs">
+                        <div>Bid: <span className="tabular-nums">${data.bid.toFixed(2)}</span></div>
+                        <div>Ask: <span className="tabular-nums">${data.ask.toFixed(2)}</span></div>
+                        <div>Mark: <span className="tabular-nums font-medium">${data.mark.toFixed(2)}</span></div>
+                        <div>Last: <span className="tabular-nums">${data.last.toFixed(2)}</span></div>
+                      </div>
+                      <div className="border-t pt-1 mt-1 text-xs text-muted-foreground">
+                        Vol: {data.volume.toLocaleString()} | OI: {data.openInterest.toLocaleString()}
+                      </div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        );
+      },
+      sortValue: (row) => {
+        const greeksInfo = getPositionGreeks(row);
+        const firstLeg = greeksInfo.legs[0]?.data;
+        return firstLeg?.delta || 0;
+      },
+    },
     ...(isAuthenticated ? [{
       key: 'notes',
       header: 'Actions',
@@ -429,7 +617,8 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     <span className={`font-semibold tabular-nums ${totals.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
       {formatCurrency(totals.netPL)}
     </span>,
-    '',
+    '', // Roll Chain
+    '', // Greeks
     ...(isAuthenticated ? [''] : []),
   ];
 
@@ -455,11 +644,11 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                   data-testid="button-refresh-quotes"
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
-                  {isLoadingQuotes ? 'Loading...' : 'Live Prices'}
+                  {isLoadingQuotes ? 'Loading...' : 'Live Data + Greeks'}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Fetch live underlying prices from Alpha Vantage</p>
+                <p>Fetch live option prices and Greeks from Alpha Vantage</p>
                 {!isAuthenticated && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Sign in and add API key in Account Settings
