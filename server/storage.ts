@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, type DbTransaction } from '@shared/schema';
-import { eq, and, count, asc, sql, max } from 'drizzle-orm';
+import { dbTransactions, uploads, comments, type DbTransaction, type Comment } from '@shared/schema';
+import { eq, and, count, asc, desc, sql, max } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
 /**
@@ -254,4 +254,115 @@ export async function getUserProfile(userId: string) {
     transactionCount: Number(transactionCountResult.count),
     uploadCount: Number(uploadCountResult.count),
   };
+}
+
+// ============================================================================
+// Comment CRUD Operations
+// ============================================================================
+
+/**
+ * Get all comments for a user, optionally filtered by transaction hash
+ */
+export async function getUserComments(
+  userId: string,
+  transactionHash?: string
+): Promise<Comment[]> {
+  if (transactionHash) {
+    return await db
+      .select()
+      .from(comments)
+      .where(and(eq(comments.userId, userId), eq(comments.transactionHash, transactionHash)))
+      .orderBy(desc(comments.createdAt));
+  }
+  
+  return await db
+    .select()
+    .from(comments)
+    .where(eq(comments.userId, userId))
+    .orderBy(desc(comments.createdAt));
+}
+
+/**
+ * Get comment counts for multiple transaction hashes (for displaying badges)
+ */
+export async function getCommentCounts(
+  userId: string,
+  transactionHashes: string[]
+): Promise<Map<string, number>> {
+  if (transactionHashes.length === 0) {
+    return new Map();
+  }
+  
+  const results = await db
+    .select({
+      transactionHash: comments.transactionHash,
+      count: count(),
+    })
+    .from(comments)
+    .where(and(
+      eq(comments.userId, userId),
+      sql`${comments.transactionHash} = ANY(${transactionHashes})`
+    ))
+    .groupBy(comments.transactionHash);
+  
+  const countMap = new Map<string, number>();
+  for (const row of results) {
+    countMap.set(row.transactionHash, Number(row.count));
+  }
+  return countMap;
+}
+
+/**
+ * Create a new comment
+ */
+export async function createComment(
+  userId: string,
+  transactionHash: string,
+  content: string
+): Promise<Comment> {
+  const [comment] = await db
+    .insert(comments)
+    .values({
+      userId,
+      transactionHash,
+      content,
+    })
+    .returning();
+  
+  return comment;
+}
+
+/**
+ * Update a comment (only if owned by user)
+ */
+export async function updateComment(
+  userId: string,
+  commentId: string,
+  content: string
+): Promise<Comment | null> {
+  const [updated] = await db
+    .update(comments)
+    .set({
+      content,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(comments.id, commentId), eq(comments.userId, userId)))
+    .returning();
+  
+  return updated || null;
+}
+
+/**
+ * Delete a comment (only if owned by user)
+ */
+export async function deleteComment(
+  userId: string,
+  commentId: string
+): Promise<boolean> {
+  const result = await db
+    .delete(comments)
+    .where(and(eq(comments.id, commentId), eq(comments.userId, userId)))
+    .returning();
+  
+  return result.length > 0;
 }

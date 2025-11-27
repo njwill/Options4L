@@ -12,7 +12,14 @@ import {
   getUserProfile,
   updateUserDisplayName,
   deleteUpload,
+  getUserComments,
+  getCommentCounts,
+  createComment,
+  updateComment,
+  deleteComment,
+  computeTransactionHash,
 } from "./storage";
+import { insertCommentSchema, updateCommentSchema } from "@shared/schema";
 import "./types";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -421,6 +428,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to export data',
+      });
+    }
+  });
+
+  // ============================================================================
+  // Comments API
+  // ============================================================================
+
+  // Get comments for a transaction (by hash)
+  app.get('/api/comments', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const transactionHash = req.query.transactionHash as string | undefined;
+      const comments = await getUserComments(req.user.id, transactionHash);
+
+      return res.json({
+        success: true,
+        comments,
+      });
+    } catch (error) {
+      console.error('Get comments error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get comments',
+      });
+    }
+  });
+
+  // Get comment counts for multiple transactions (for badges)
+  app.post('/api/comments/counts', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { transactionHashes } = req.body;
+      if (!Array.isArray(transactionHashes)) {
+        return res.status(400).json({ success: false, message: 'transactionHashes must be an array' });
+      }
+
+      const counts = await getCommentCounts(req.user.id, transactionHashes);
+
+      // Convert Map to object for JSON response
+      const countsObj: Record<string, number> = {};
+      counts.forEach((count, hash) => {
+        countsObj[hash] = count;
+      });
+
+      return res.json({
+        success: true,
+        counts: countsObj,
+      });
+    } catch (error) {
+      console.error('Get comment counts error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get comment counts',
+      });
+    }
+  });
+
+  // Create a new comment
+  app.post('/api/comments', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = insertCommentSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          success: false, 
+          message: validation.error.errors[0]?.message || 'Invalid request' 
+        });
+      }
+
+      const { transactionHash, content } = validation.data;
+      const comment = await createComment(req.user.id, transactionHash, content);
+
+      return res.json({
+        success: true,
+        comment,
+      });
+    } catch (error) {
+      console.error('Create comment error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create comment',
+      });
+    }
+  });
+
+  // Update a comment
+  app.put('/api/comments/:id', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = updateCommentSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          success: false, 
+          message: validation.error.errors[0]?.message || 'Invalid request' 
+        });
+      }
+
+      const commentId = req.params.id;
+      const { content } = validation.data;
+      const comment = await updateComment(req.user.id, commentId, content);
+
+      if (!comment) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Comment not found or you do not have permission to edit it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        comment,
+      });
+    } catch (error) {
+      console.error('Update comment error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update comment',
+      });
+    }
+  });
+
+  // Delete a comment
+  app.delete('/api/comments/:id', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const commentId = req.params.id;
+      const success = await deleteComment(req.user.id, commentId);
+
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Comment not found or you do not have permission to delete it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Comment deleted successfully',
+      });
+    } catch (error) {
+      console.error('Delete comment error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete comment',
       });
     }
   });
