@@ -16,6 +16,7 @@ A comprehensive trading analysis application designed to process Robinhood tradi
 - **NEW:** Session import to save anonymous data after login
 - **NEW:** Account management with upload history and data export
 - **NEW:** Transaction comments - add notes to individual trades (authenticated users only)
+- **NEW:** Position comments - add notes to open/closed positions (authenticated users only)
 
 ## User Preferences
 
@@ -174,11 +175,12 @@ Preferred communication style: Simple, everyday language.
 
 **Migration Setup:** Schema defined in `shared/schema.ts` with migration output to `./migrations` directory. Database connection via `DATABASE_URL` environment variable.
 
-**Active Usage:** Database is used for authenticated user data with four main tables:
+**Active Usage:** Database is used for authenticated user data with five main tables:
 - `users` - NOSTR public keys, display names, creation timestamps
 - `uploads` - Upload metadata (filename, date, transaction counts)
 - `transactions` - Individual transaction records with deduplication hash
 - `comments` - User notes on transactions, linked by transactionHash for persistence across re-uploads
+- `positionComments` - User notes on positions, linked by positionHash for persistence across re-uploads
 
 **Schema Highlights:**
 - User-scoped data isolation via foreign keys
@@ -219,3 +221,12 @@ Comments feature for authenticated users to add notes to individual trades:
 - API endpoints: GET/POST `/api/comments`, PUT/DELETE `/api/comments/:id`
 - CommentsPanel component with Sheet UI for add/edit/delete operations
 - Notes column visible only in Transaction History table for authenticated users
+
+### Position Comments
+Comments feature for authenticated users to add notes to open/closed positions:
+- Comments linked to positionHash (not database ID) for persistence across file re-uploads
+- Hash computed from: symbol, strategyType, entryDate, and sorted leg signatures (expiration|strike|optionType|direction)
+- Frontend uses `computePositionHash` utility matching backend hashing algorithm
+- API endpoints: GET/POST `/api/position-comments`, PUT/DELETE `/api/position-comments/:id`
+- PositionCommentsPanel component with Sheet UI for add/edit/delete operations
+- Notes column visible only in Open Positions and Closed Positions tables for authenticated users
