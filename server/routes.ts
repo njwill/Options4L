@@ -521,7 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch options chain with Greeks from Tradier API (free sandbox with Greeks from ORATS)
+  // Fetch options prices from Yahoo Finance (free, no API key required)
   interface OptionLegRequest {
     symbol: string;
     strike: number;
@@ -536,211 +536,194 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ success: false, message: 'Authentication required' });
       }
 
-      const apiKey = await getUserAlphaVantageApiKey(req.user.id);
-      if (!apiKey) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Tradier API key not configured. Add your API key in Account Settings.' 
-        });
-      }
-
       const { legs } = req.body as { legs: OptionLegRequest[] };
       if (!legs || !Array.isArray(legs) || legs.length === 0) {
         return res.status(400).json({ success: false, message: 'Option legs array required' });
       }
 
-      // Helper to normalize date format to YYYY-MM-DD for Tradier API
-      const normalizeDate = (dateStr: string): string => {
-        if (!dateStr) return '';
+      // Helper to parse date string to Unix timestamp (seconds)
+      const dateToTimestamp = (dateStr: string): number => {
+        if (!dateStr) return 0;
+        let date: Date;
+        
         // Handle MM/DD/YYYY format
         if (dateStr.includes('/')) {
           const parts = dateStr.split('/');
           if (parts.length === 3) {
             const [month, day, year] = parts;
-            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          } else {
+            date = new Date(dateStr);
           }
+        } else {
+          // YYYY-MM-DD format
+          date = new Date(dateStr);
         }
-        // Already YYYY-MM-DD
-        return dateStr;
+        
+        return Math.floor(date.getTime() / 1000);
       };
 
-      // Group legs by symbol AND expiration (Tradier requires specific expiration per request)
-      const symbolExpirationGroups: Record<string, OptionLegRequest[]> = {};
+      // Group legs by symbol (Yahoo returns all expirations for a symbol, we filter after)
+      const symbolGroups: Record<string, OptionLegRequest[]> = {};
       for (const leg of legs) {
-        const normalizedExp = normalizeDate(leg.expiration);
-        const key = `${leg.symbol}|${normalizedExp}`;
-        if (!symbolExpirationGroups[key]) {
-          symbolExpirationGroups[key] = [];
+        if (!symbolGroups[leg.symbol]) {
+          symbolGroups[leg.symbol] = [];
         }
-        symbolExpirationGroups[key].push(leg);
+        symbolGroups[leg.symbol].push(leg);
       }
 
-      const groupKeys = Object.keys(symbolExpirationGroups);
+      const symbols = Object.keys(symbolGroups);
       
-      // Limit API calls (Tradier sandbox: 60/min, but be conservative)
-      const limitedGroups = groupKeys.slice(0, 20);
+      // Limit API calls to prevent rate limiting
+      const limitedSymbols = symbols.slice(0, 15);
       const optionData: Record<string, any> = {}; // keyed by legId
       const errors: string[] = [];
 
-      console.log(`[Greeks] Fetching ${limitedGroups.length} symbol/expiration combinations via Tradier`);
+      console.log(`[Yahoo] Fetching options for ${limitedSymbols.length} symbols`);
 
-      // Fetch options chain for each symbol+expiration combination
-      for (const groupKey of limitedGroups) {
-        const [symbol, expiration] = groupKey.split('|');
-        const legsInGroup = symbolExpirationGroups[groupKey];
+      // Fetch options chain for each symbol
+      for (const symbol of limitedSymbols) {
+        const legsForSymbol = symbolGroups[symbol];
+        
+        // Get unique expirations for this symbol
+        const expirationTimestamps = new Set<number>();
+        for (const leg of legsForSymbol) {
+          expirationTimestamps.add(dateToTimestamp(leg.expiration));
+        }
         
         try {
-          // Tradier API endpoint for options chain with Greeks
-          // Endpoint: GET /v1/markets/options/chains?symbol=X&expiration=YYYY-MM-DD&greeks=true
-          const url = `https://api.tradier.com/v1/markets/options/chains?symbol=${encodeURIComponent(symbol)}&expiration=${expiration}&greeks=true`;
-          console.log(`[Greeks] Fetching: ${symbol} exp ${expiration}`);
-          
-          const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Accept': 'application/json',
-            },
-          });
-          
-          // Check HTTP status codes
-          if (response.status === 429) {
-            errors.push(`Rate limit reached. Tradier sandbox allows 60 calls/minute.`);
-            break;
-          }
-
-          if (response.status === 401) {
-            errors.push(`Invalid API key. Please check your Tradier API key in Account Settings.`);
-            break;
-          }
-          
-          if (response.status === 403) {
-            errors.push(`Access denied. Make sure you're using a valid Tradier sandbox or production API key.`);
-            break;
-          }
-          
-          // Check content type - Tradier may return XML/text for errors
-          const contentType = response.headers.get('content-type') || '';
-          if (!contentType.includes('application/json')) {
-            const textBody = await response.text();
-            console.error(`[Greeks] Non-JSON response for ${symbol}:`, textBody.substring(0, 200));
-            errors.push(`Invalid response format for ${symbol}. Check your API key.`);
-            for (const leg of legsInGroup) {
-              optionData[leg.legId] = {
-                symbol: leg.symbol,
-                strike: leg.strike,
-                expiration: leg.expiration,
-                type: leg.type,
-                error: 'Invalid API response format',
-              };
-            }
-            continue;
-          }
-
-          const data = await response.json();
-          
-          // Tradier returns { options: { option: [...] } } or { options: null }
-          const optionsArray = data.options?.option || [];
-          
-          // Handle single option returned as object instead of array
-          const optionsChain = Array.isArray(optionsArray) ? optionsArray : (optionsArray ? [optionsArray] : []);
-          
-          if (optionsChain.length === 0) {
-            // No options for this expiration - might be expired or not trading
-            for (const leg of legsInGroup) {
-              optionData[leg.legId] = {
-                symbol: leg.symbol,
-                strike: leg.strike,
-                expiration: leg.expiration,
-                type: leg.type,
-                error: 'No options data available for this expiration',
-              };
-            }
-            continue;
-          }
-
-          // Match user's requested contracts from the chain
-          for (const leg of legsInGroup) {
-            const legType = leg.type.toLowerCase();
+          // Yahoo Finance API - fetch each expiration date separately
+          for (const expTimestamp of expirationTimestamps) {
+            const url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}?date=${expTimestamp}`;
+            console.log(`[Yahoo] Fetching: ${symbol} exp ${new Date(expTimestamp * 1000).toISOString().split('T')[0]}`);
             
-            // Find matching contract in chain
-            // Tradier structure: strike, option_type ("call"/"put"), expiration_date
-            const matchedContract = optionsChain.find((contract: any) => {
-              const contractType = (contract.option_type || '').toLowerCase();
-              const contractStrike = parseFloat(contract.strike) || 0;
-              
-              return (
-                contractType === legType &&
-                Math.abs(contractStrike - leg.strike) < 0.01 // Float comparison tolerance
-              );
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (compatible; OptionsAnalyzer/1.0)',
+              },
             });
+            
+            if (response.status === 429) {
+              errors.push(`Rate limit reached for ${symbol}. Try again in a minute.`);
+              continue;
+            }
 
-            if (matchedContract) {
-              const greeks = matchedContract.greeks || {};
+            if (!response.ok) {
+              console.error(`[Yahoo] HTTP ${response.status} for ${symbol}`);
+              continue;
+            }
+            
+            const data = await response.json();
+            
+            // Yahoo structure: { optionChain: { result: [{ options: [{ calls: [...], puts: [...] }] }] } }
+            const result = data.optionChain?.result?.[0];
+            if (!result || !result.options || result.options.length === 0) {
+              continue;
+            }
+
+            const optionsData = result.options[0];
+            const calls = optionsData.calls || [];
+            const puts = optionsData.puts || [];
+            const underlyingPrice = result.quote?.regularMarketPrice || null;
+
+            // Match legs for this expiration
+            const legsForExpiration = legsForSymbol.filter(
+              leg => dateToTimestamp(leg.expiration) === expTimestamp
+            );
+
+            for (const leg of legsForExpiration) {
+              const legType = leg.type.toLowerCase();
+              const contractList = legType === 'call' ? calls : puts;
               
-              optionData[leg.legId] = {
-                symbol: leg.symbol,
-                strike: leg.strike,
-                expiration: leg.expiration,
-                type: leg.type,
-                contractId: matchedContract.symbol || null,
-                // Prices
-                bid: parseFloat(matchedContract.bid) || 0,
-                ask: parseFloat(matchedContract.ask) || 0,
-                last: parseFloat(matchedContract.last) || 0,
-                mark: ((parseFloat(matchedContract.bid) || 0) + (parseFloat(matchedContract.ask) || 0)) / 2,
-                // Greeks from Tradier/ORATS
-                delta: greeks.delta !== undefined ? parseFloat(greeks.delta) : null,
-                gamma: greeks.gamma !== undefined ? parseFloat(greeks.gamma) : null,
-                theta: greeks.theta !== undefined ? parseFloat(greeks.theta) : null,
-                vega: greeks.vega !== undefined ? parseFloat(greeks.vega) : null,
-                rho: greeks.rho !== undefined ? parseFloat(greeks.rho) : null,
-                // Implied Volatility (Tradier provides mid_iv)
-                impliedVolatility: greeks.mid_iv !== undefined ? parseFloat(greeks.mid_iv) : null,
-                // Volume/Interest
-                volume: parseInt(matchedContract.volume) || 0,
-                openInterest: parseInt(matchedContract.open_interest) || 0,
-                // Underlying price (from root_symbol data if available)
-                underlyingPrice: null, // Tradier doesn't include this in chain response
-              };
-            } else {
-              // Contract not found in chain
-              optionData[leg.legId] = {
-                symbol: leg.symbol,
-                strike: leg.strike,
-                expiration: leg.expiration,
-                type: leg.type,
-                error: 'Contract not found in options chain',
-              };
+              // Find matching contract by strike
+              const matchedContract = contractList.find((contract: any) => {
+                const contractStrike = parseFloat(contract.strike) || 0;
+                return Math.abs(contractStrike - leg.strike) < 0.01;
+              });
+
+              if (matchedContract) {
+                optionData[leg.legId] = {
+                  symbol: leg.symbol,
+                  strike: leg.strike,
+                  expiration: leg.expiration,
+                  type: leg.type,
+                  contractId: matchedContract.contractSymbol || null,
+                  // Prices
+                  bid: parseFloat(matchedContract.bid) || 0,
+                  ask: parseFloat(matchedContract.ask) || 0,
+                  last: parseFloat(matchedContract.lastPrice) || 0,
+                  mark: ((parseFloat(matchedContract.bid) || 0) + (parseFloat(matchedContract.ask) || 0)) / 2,
+                  // Volume/Interest
+                  volume: parseInt(matchedContract.volume) || 0,
+                  openInterest: parseInt(matchedContract.openInterest) || 0,
+                  // Underlying price
+                  underlyingPrice: underlyingPrice,
+                  // Yahoo provides implied volatility
+                  impliedVolatility: matchedContract.impliedVolatility 
+                    ? parseFloat(matchedContract.impliedVolatility) 
+                    : null,
+                  // Yahoo doesn't provide Greeks in free API
+                  delta: null,
+                  gamma: null,
+                  theta: null,
+                  vega: null,
+                  rho: null,
+                };
+              } else {
+                optionData[leg.legId] = {
+                  symbol: leg.symbol,
+                  strike: leg.strike,
+                  expiration: leg.expiration,
+                  type: leg.type,
+                  error: 'Contract not found - may be expired or delisted',
+                };
+              }
             }
           }
         } catch (err) {
-          console.error(`[Greeks] Error fetching ${symbol}:`, err);
+          console.error(`[Yahoo] Error fetching ${symbol}:`, err);
           errors.push(`Failed to fetch ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-          // Mark all legs in this group as failed
-          for (const leg of legsInGroup) {
-            optionData[leg.legId] = {
-              symbol: leg.symbol,
-              strike: leg.strike,
-              expiration: leg.expiration,
-              type: leg.type,
-              error: 'Failed to fetch options data',
-            };
+          // Mark all legs for this symbol as failed
+          for (const leg of legsForSymbol) {
+            if (!optionData[leg.legId]) {
+              optionData[leg.legId] = {
+                symbol: leg.symbol,
+                strike: leg.strike,
+                expiration: leg.expiration,
+                type: leg.type,
+                error: 'Failed to fetch options data',
+              };
+            }
           }
         }
       }
 
-      // Track which groups were skipped due to limit
-      if (groupKeys.length > limitedGroups.length) {
-        const skipped = groupKeys.length - limitedGroups.length;
-        errors.push(`Skipped ${skipped} expiration(s) due to API limit`);
+      // Track which symbols were skipped due to limit
+      if (symbols.length > limitedSymbols.length) {
+        const skipped = symbols.length - limitedSymbols.length;
+        errors.push(`Skipped ${skipped} symbol(s) due to request limit`);
+      }
+
+      // Fill in any legs that weren't fetched
+      for (const leg of legs) {
+        if (!optionData[leg.legId]) {
+          optionData[leg.legId] = {
+            symbol: leg.symbol,
+            strike: leg.strike,
+            expiration: leg.expiration,
+            type: leg.type,
+            error: 'Not fetched',
+          };
+        }
       }
 
       return res.json({
         success: true,
         optionData,
-        groupsFetched: limitedGroups.length,
-        totalGroups: groupKeys.length,
+        symbolsFetched: limitedSymbols.length,
+        totalSymbols: symbols.length,
         errors: errors.length > 0 ? errors : undefined,
       });
     } catch (error) {
