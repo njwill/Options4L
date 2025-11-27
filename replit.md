@@ -17,6 +17,7 @@ A comprehensive trading analysis application designed to process Robinhood tradi
 - **NEW:** Account management with upload history and data export
 - **NEW:** Transaction comments - add notes to individual trades (authenticated users only)
 - **NEW:** Position comments - add notes to open/closed positions (authenticated users only)
+- **NEW:** Comment notification badges - blue circular badges show comment counts on MessageSquare icons
 
 ## User Preferences
 
