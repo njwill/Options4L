@@ -10,11 +10,20 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { computePositionHash } from '@/lib/positionHash';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+
+interface StockQuote {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: string;
+  previousClose: number;
+  latestTradingDay: string;
+}
 
 interface OpenPositionsProps {
   positions: Position[];
@@ -33,6 +42,12 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const [selectedPositionDesc, setSelectedPositionDesc] = useState('');
   const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
   const [ungroupingId, setUngroupingId] = useState<string | null>(null);
+  
+  // Live price state
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, StockQuote>>({});
+  const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
+  const [lastQuoteUpdate, setLastQuoteUpdate] = useState<Date | null>(null);
   
   const { user } = useAuth();
   const isAuthenticated = !!user;
@@ -113,6 +128,78 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       setUngroupingId(null);
     }
   };
+  
+  // Fetch live quotes for underlying symbols
+  const fetchLiveQuotes = async () => {
+    if (!isAuthenticated) {
+      toast({
+        title: 'Sign in required',
+        description: 'Please sign in and add your Alpha Vantage API key in Account Settings to fetch live prices.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const uniqueSymbols = Array.from(new Set(openPositions.map((p) => p.symbol)));
+    if (uniqueSymbols.length === 0) return;
+    
+    setIsLoadingQuotes(true);
+    setQuotesError(null);
+    
+    try {
+      // Fetch in batches of 5 (API limit)
+      const allQuotes: Record<string, StockQuote> = {};
+      
+      for (let i = 0; i < uniqueSymbols.length; i += 5) {
+        const batch = uniqueSymbols.slice(i, i + 5);
+        const response = await apiRequest('POST', '/api/options/quotes', { symbols: batch });
+        const data = await response.json();
+        
+        if (data.success && data.quotes) {
+          Object.assign(allQuotes, data.quotes);
+        }
+        
+        if (data.errors && data.errors.length > 0) {
+          // Check if it's a rate limit error
+          if (data.errors.some((e: string) => e.includes('Rate limit'))) {
+            setQuotesError('API rate limit reached. Try again in a minute.');
+            break;
+          }
+        }
+        
+        if (!data.success && data.message) {
+          setQuotesError(data.message);
+          break;
+        }
+        
+        // Small delay between batches to avoid rate limiting
+        if (i + 5 < uniqueSymbols.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+      setLiveQuotes(allQuotes);
+      setLastQuoteUpdate(new Date());
+      
+      if (Object.keys(allQuotes).length > 0) {
+        toast({
+          title: 'Prices updated',
+          description: `Fetched live prices for ${Object.keys(allQuotes).length} symbol(s)`,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch quotes:', error);
+      const message = error instanceof Error ? error.message : 'Failed to fetch live prices';
+      setQuotesError(message);
+      toast({
+        title: 'Error',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingQuotes(false);
+    }
+  };
 
   const symbols = useMemo(() => {
     return Array.from(new Set(openPositions.map((p) => p.symbol))).sort();
@@ -160,7 +247,27 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     {
       key: 'symbol',
       header: 'Symbol',
-      accessor: (row) => <span className="font-medium">{row.symbol}</span>,
+      accessor: (row) => {
+        const quote = liveQuotes[row.symbol];
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium">{row.symbol}</span>
+            {quote && (
+              <div className="flex items-center gap-1 text-xs">
+                <span className="tabular-nums">${quote.price.toFixed(2)}</span>
+                <span className={`flex items-center ${parseFloat(quote.changePercent) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {parseFloat(quote.changePercent) >= 0 ? (
+                    <TrendingUp className="w-3 h-3" />
+                  ) : (
+                    <TrendingDown className="w-3 h-3" />
+                  )}
+                  {quote.changePercent}%
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      },
       sortValue: (row) => row.symbol,
     },
     {
@@ -328,11 +435,51 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold mb-2">Open Positions</h1>
-        <p className="text-muted-foreground">
-          Currently active positions with credit/debit tracking and profitability analysis
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold mb-2">Open Positions</h1>
+          <p className="text-muted-foreground">
+            Currently active positions with credit/debit tracking and profitability analysis
+          </p>
+        </div>
+        
+        {openPositions.length > 0 && (
+          <div className="flex flex-col items-end gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchLiveQuotes}
+                  disabled={isLoadingQuotes}
+                  data-testid="button-refresh-quotes"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
+                  {isLoadingQuotes ? 'Loading...' : 'Live Prices'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Fetch live underlying prices from Alpha Vantage</p>
+                {!isAuthenticated && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Sign in and add API key in Account Settings
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+            {lastQuoteUpdate && (
+              <span className="text-xs text-muted-foreground">
+                Updated {format(lastQuoteUpdate, 'h:mm a')}
+              </span>
+            )}
+            {quotesError && (
+              <div className="flex items-center gap-1 text-xs text-destructive">
+                <AlertCircle className="w-3 h-3" />
+                {quotesError}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <FilterBar
