@@ -12,6 +12,7 @@ import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { usePriceCache } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -75,6 +76,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const { user } = useAuth();
   const isAuthenticated = !!user;
   const { toast } = useToast();
+  const { setPositionPrices } = usePriceCache();
 
   const openPositions = positions.filter((p) => p.status === 'open');
   
@@ -206,6 +208,20 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         
         if (chainData.success && chainData.optionData) {
           setOptionData(chainData.optionData);
+          
+          // Write prices to shared cache grouped by position ID
+          const pricesByPosition: Record<string, Record<string, OptionLegData>> = {};
+          Object.entries(chainData.optionData as Record<string, OptionLegData>).forEach(([legId, legData]) => {
+            const positionId = legId.split('-leg-')[0];
+            if (!pricesByPosition[positionId]) {
+              pricesByPosition[positionId] = {};
+            }
+            pricesByPosition[positionId][legId] = legData;
+          });
+          
+          Object.entries(pricesByPosition).forEach(([positionId, prices]) => {
+            setPositionPrices(positionId, prices as any);
+          });
           
           // Extract underlying prices from options data
           const underlyingPrices: Record<string, StockQuote> = {};
