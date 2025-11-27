@@ -1,5 +1,5 @@
 import type { Transaction, Position, OptionLeg, Roll, SummaryStats, RollChain, RollChainSegment } from '@shared/schema';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { classifyStrategy, createOptionLeg } from './strategyClassification';
 import { detectRolls, createRollRecords } from './rollDetection';
 
@@ -327,10 +327,9 @@ function applyManualGroupings(
     return { manuallyGroupedPositions: [], remainingPositions: positions };
   }
 
-  // Build transaction ID to hash mapping using import from storage
+  // Build transaction ID to hash mapping
   // We need to compute hashes dynamically since transactions may not have hash stored
   const txnIdToHash = new Map<string, string>();
-  const { createHash } = require('crypto');
   
   transactions.forEach((txn) => {
     const option = txn.option || {};
