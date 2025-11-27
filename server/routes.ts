@@ -578,6 +578,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Alpha Vantage returns options in 'data' array
           const optionsChain = data.data || [];
           chainCache[symbol] = optionsChain;
+          
+          // Debug: Log a sample contract to see the format
+          if (optionsChain.length > 0) {
+            console.log(`[Greeks Debug] Sample contract from ${symbol}:`, {
+              expiration: optionsChain[0].expiration,
+              type: optionsChain[0].type,
+              strike: optionsChain[0].strike,
+            });
+          } else {
+            console.log(`[Greeks Debug] No options chain data for ${symbol}`);
+          }
 
           // Match user's requested contracts from the chain
           const legsForSymbol = symbolGroups[symbol];
@@ -585,6 +596,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           for (const leg of legsForSymbol) {
             const normalizedExpiration = normalizeDate(leg.expiration);
             const legType = leg.type.toLowerCase();
+            
+            console.log(`[Greeks Debug] Looking for: expiration=${normalizedExpiration}, type=${legType}, strike=${leg.strike}`);
             
             // Find matching contract in chain
             const matchedContract = optionsChain.find((contract: any) => {
