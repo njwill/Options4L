@@ -1,7 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { MessageSquare } from 'lucide-react';
+import { CommentsPanel } from '@/components/CommentsPanel';
+import { useAuth } from '@/hooks/use-auth';
+import { computeTransactionHash } from '@/lib/transactionHash';
 import type { Transaction } from '@shared/schema';
 import { format } from 'date-fns';
 
@@ -13,6 +18,37 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
+  
+  const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
+  const [selectedTxnHash, setSelectedTxnHash] = useState('');
+  const [selectedTxnDesc, setSelectedTxnDesc] = useState('');
+  const [transactionHashes, setTransactionHashes] = useState<Map<string, string>>(new Map());
+  
+  const { user } = useAuth();
+  const isAuthenticated = !!user;
+  
+  useEffect(() => {
+    async function computeHashes() {
+      const hashMap = new Map<string, string>();
+      for (const txn of transactions) {
+        const hash = await computeTransactionHash(txn);
+        hashMap.set(txn.id, hash);
+      }
+      setTransactionHashes(hashMap);
+    }
+    if (transactions.length > 0) {
+      computeHashes();
+    }
+  }, [transactions]);
+  
+  const handleOpenComments = (txn: Transaction) => {
+    const hash = transactionHashes.get(txn.id);
+    if (hash) {
+      setSelectedTxnHash(hash);
+      setSelectedTxnDesc(`${txn.transCode} ${txn.description} - ${txn.activityDate}`);
+      setCommentsPanelOpen(true);
+    }
+  };
 
   const symbols = useMemo(() => {
     return Array.from(new Set(transactions.map((t) => t.instrument).filter(Boolean))).sort();
@@ -133,7 +169,27 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
       ),
       sortValue: (row) => row.strategyTag || '',
     },
-  ];
+    ...(isAuthenticated ? [{
+      key: 'notes',
+      header: 'Notes',
+      accessor: (row: Transaction) => (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenComments(row);
+          }}
+          data-testid={`button-notes-${row.id}`}
+        >
+          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+        </Button>
+      ),
+      sortValue: () => 0,
+      className: 'text-center w-[60px]',
+    }] : []),
+  ] as Column<Transaction>[];
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -172,6 +228,15 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
         testId="table-transactions"
         pageSize={100}
       />
+      
+      {isAuthenticated && (
+        <CommentsPanel
+          isOpen={commentsPanelOpen}
+          onClose={() => setCommentsPanelOpen(false)}
+          transactionHash={selectedTxnHash}
+          transactionDescription={selectedTxnDesc}
+        />
+      )}
     </div>
   );
 }
