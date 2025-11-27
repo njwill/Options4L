@@ -196,6 +196,29 @@ export async function updateUserDisplayName(userId: string, displayName: string)
 }
 
 /**
+ * Get user's Alpha Vantage API key
+ */
+export async function getUserAlphaVantageApiKey(userId: string): Promise<string | null> {
+  const { users } = await import('@shared/schema');
+  const [user] = await db
+    .select({ alphaVantageApiKey: users.alphaVantageApiKey })
+    .from(users)
+    .where(eq(users.id, userId));
+  return user?.alphaVantageApiKey || null;
+}
+
+/**
+ * Update user's Alpha Vantage API key
+ */
+export async function updateUserAlphaVantageApiKey(userId: string, apiKey: string | null) {
+  const { users } = await import('@shared/schema');
+  await db
+    .update(users)
+    .set({ alphaVantageApiKey: apiKey })
+    .where(eq(users.id, userId));
+}
+
+/**
  * Delete an upload and all its associated transactions
  * Returns true if successful, false if upload not found or not owned by user
  */

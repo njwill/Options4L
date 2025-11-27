@@ -11,6 +11,8 @@ import {
   getUserUploads,
   getUserProfile,
   updateUserDisplayName,
+  getUserAlphaVantageApiKey,
+  updateUserAlphaVantageApiKey,
   deleteUpload,
   getUserComments,
   getCommentCounts,
@@ -362,6 +364,137 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to update display name',
+      });
+    }
+  });
+
+  // Get user's Alpha Vantage API key status (not the key itself for security)
+  app.get('/api/user/api-key-status', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const apiKey = await getUserAlphaVantageApiKey(req.user.id);
+      
+      return res.json({
+        success: true,
+        hasApiKey: !!apiKey,
+        maskedKey: apiKey ? `${apiKey.substring(0, 4)}${'*'.repeat(apiKey.length - 4)}` : null,
+      });
+    } catch (error) {
+      console.error('Get API key status error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get API key status',
+      });
+    }
+  });
+
+  // Save user's Alpha Vantage API key
+  app.put('/api/user/api-key', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { apiKey } = req.body;
+      
+      // Allow null to clear the key
+      if (apiKey !== null && (typeof apiKey !== 'string' || apiKey.trim().length === 0)) {
+        return res.status(400).json({ success: false, message: 'Valid API key or null required' });
+      }
+
+      if (apiKey && apiKey.length > 32) {
+        return res.status(400).json({ success: false, message: 'API key too long' });
+      }
+
+      await updateUserAlphaVantageApiKey(req.user.id, apiKey ? apiKey.trim() : null);
+
+      return res.json({
+        success: true,
+        message: apiKey ? 'API key saved successfully' : 'API key removed successfully',
+      });
+    } catch (error) {
+      console.error('Save API key error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to save API key',
+      });
+    }
+  });
+
+  // Fetch live option data from Alpha Vantage
+  app.post('/api/options/quotes', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const apiKey = await getUserAlphaVantageApiKey(req.user.id);
+      if (!apiKey) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Alpha Vantage API key not configured. Add your API key in Account Settings.' 
+        });
+      }
+
+      const { symbols } = req.body;
+      if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+        return res.status(400).json({ success: false, message: 'Symbols array required' });
+      }
+
+      // Limit to 5 symbols per request to avoid rate limiting
+      const limitedSymbols = symbols.slice(0, 5);
+      const quotes: Record<string, any> = {};
+      const errors: string[] = [];
+
+      // Fetch quotes for each symbol
+      for (const symbol of limitedSymbols) {
+        try {
+          const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (data['Global Quote'] && Object.keys(data['Global Quote']).length > 0) {
+            const quote = data['Global Quote'];
+            quotes[symbol] = {
+              symbol: quote['01. symbol'],
+              price: parseFloat(quote['05. price']) || 0,
+              change: parseFloat(quote['09. change']) || 0,
+              changePercent: quote['10. change percent']?.replace('%', '') || '0',
+              previousClose: parseFloat(quote['08. previous close']) || 0,
+              open: parseFloat(quote['02. open']) || 0,
+              high: parseFloat(quote['03. high']) || 0,
+              low: parseFloat(quote['04. low']) || 0,
+              volume: parseInt(quote['06. volume']) || 0,
+              latestTradingDay: quote['07. latest trading day'],
+            };
+          } else if (data['Note']) {
+            // API limit reached
+            errors.push(`Rate limit reached: ${data['Note']}`);
+            break;
+          } else if (data['Error Message']) {
+            errors.push(`Error for ${symbol}: ${data['Error Message']}`);
+          }
+        } catch (err) {
+          errors.push(`Failed to fetch ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+
+      return res.json({
+        success: true,
+        quotes,
+        errors: errors.length > 0 ? errors : undefined,
+        message: errors.length > 0 && Object.keys(quotes).length === 0 
+          ? 'Failed to fetch quotes. Check your API key or try again later.' 
+          : undefined,
+      });
+    } catch (error) {
+      console.error('Fetch options quotes error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch option quotes',
       });
     }
   });
