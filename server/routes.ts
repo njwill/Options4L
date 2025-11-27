@@ -597,7 +597,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Massive.com API endpoint for options chain snapshot
           const url = `https://api.massive.com/v3/snapshot/options/${encodeURIComponent(symbol)}?apiKey=${apiKey}&limit=250`;
           console.log(`[Greeks DEBUG] Fetching: ${url.replace(apiKey, '***')}`);
-          const response = await fetch(url);
+          
+          let response;
+          try {
+            response = await fetch(url);
+            console.log(`[Greeks DEBUG] Fetch completed with status: ${response.status}`);
+          } catch (fetchErr) {
+            console.log(`[Greeks DEBUG] Fetch FAILED:`, fetchErr);
+            errors.push(`Network error fetching ${symbol}: ${fetchErr instanceof Error ? fetchErr.message : 'Unknown'}`);
+            continue;
+          }
           
           // Check HTTP status codes first (transport-level errors)
           if (response.status === 429) {
@@ -610,7 +619,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
           }
           
-          const data = await response.json();
+          let data;
+          try {
+            const rawText = await response.text();
+            console.log(`[Greeks DEBUG] Raw response (first 500 chars):`, rawText.substring(0, 500));
+            data = JSON.parse(rawText);
+          } catch (jsonErr) {
+            console.log(`[Greeks DEBUG] JSON parse FAILED:`, jsonErr);
+            errors.push(`Invalid response from API for ${symbol}`);
+            continue;
+          }
           
           // Debug: Log raw API response structure
           console.log(`[Greeks DEBUG] ${symbol} HTTP status: ${response.status}`);
