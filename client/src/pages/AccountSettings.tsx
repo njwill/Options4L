@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Save, Clock, FileText, Trash2 } from 'lucide-react';
+import { Download, Save, Clock, FileText, Trash2, Link2, Check, Mail, Key, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { hexToNpub, truncateNpub } from '@/lib/nostr';
 import {
@@ -19,10 +19,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface UserProfile {
   id: string;
-  nostrPubkey: string;
+  nostrPubkey: string | null;
+  email: string | null;
   displayName: string | null;
   createdAt: string;
   lastLoginAt: string | null;
@@ -42,7 +51,7 @@ interface AccountSettingsProps {
 }
 
 export default function AccountSettings({ onDataChange }: AccountSettingsProps) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -51,6 +60,16 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [deletingUploadId, setDeletingUploadId] = useState<string | null>(null);
+  
+  // Account linking state
+  const [isLinkingNostr, setIsLinkingNostr] = useState(false);
+  const [isLinkingEmail, setIsLinkingEmail] = useState(false);
+  const [linkEmailInput, setLinkEmailInput] = useState('');
+  const [emailLinkSent, setEmailLinkSent] = useState(false);
+  const [showLinkEmailDialog, setShowLinkEmailDialog] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeConflictUserId, setMergeConflictUserId] = useState<string | null>(null);
+  const [isMerging, setIsMerging] = useState(false);
 
   useEffect(() => {
     fetchProfileData();
@@ -186,6 +205,158 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
     }
   };
 
+  // Link NOSTR account handler
+  const handleLinkNostr = useCallback(async () => {
+    if (!window.nostr) {
+      toast({
+        title: 'NOSTR Extension Required',
+        description: 'Please install a NOSTR browser extension (nos2x, Alby, or Flamingo)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLinkingNostr(true);
+    try {
+      // Get a challenge from the server
+      const challengeRes = await fetch('/api/auth/challenge', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      
+      if (!challengeRes.ok) throw new Error('Failed to get challenge');
+      const { nonce } = await challengeRes.json();
+
+      // Sign the challenge with NOSTR
+      const event = await window.nostr.signEvent({
+        kind: 27235,
+        content: nonce,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+      });
+
+      // Send to link endpoint
+      const linkRes = await fetch('/api/auth/link/nostr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event }),
+        credentials: 'include',
+      });
+
+      const data = await linkRes.json();
+
+      if (linkRes.status === 409 && data.canMerge) {
+        // Conflict - offer to merge accounts
+        setMergeConflictUserId(data.conflictUserId);
+        setShowMergeDialog(true);
+        return;
+      }
+
+      if (!linkRes.ok) throw new Error(data.error || 'Failed to link NOSTR');
+
+      toast({
+        title: 'Success',
+        description: 'NOSTR account linked successfully',
+      });
+      
+      refreshUser();
+      fetchProfileData();
+    } catch (error) {
+      console.error('Link NOSTR error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to link NOSTR account',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLinkingNostr(false);
+    }
+  }, [toast, refreshUser]);
+
+  // Link email handler - send magic link
+  const handleLinkEmailRequest = async () => {
+    const email = linkEmailInput.trim().toLowerCase();
+    if (!email) return;
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      toast({
+        title: 'Invalid Email',
+        description: 'Please enter a valid email address',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLinkingEmail(true);
+    try {
+      const res = await fetch('/api/auth/link/email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to send verification email');
+
+      setEmailLinkSent(true);
+      toast({
+        title: 'Verification Email Sent',
+        description: `Check your inbox at ${email}`,
+      });
+    } catch (error) {
+      console.error('Link email request error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to send verification email',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLinkingEmail(false);
+    }
+  };
+
+  // Merge accounts handler
+  const handleMergeAccounts = async () => {
+    if (!mergeConflictUserId) return;
+
+    setIsMerging(true);
+    try {
+      const res = await fetch('/api/auth/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromUserId: mergeConflictUserId }),
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to merge accounts');
+
+      toast({
+        title: 'Accounts Merged',
+        description: `Successfully merged accounts. Transferred ${data.merged.transactions} transactions.`,
+      });
+      
+      setShowMergeDialog(false);
+      setMergeConflictUserId(null);
+      refreshUser();
+      fetchProfileData();
+      onDataChange?.();
+    } catch (error) {
+      console.error('Merge accounts error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to merge accounts',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -208,9 +379,98 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
   }
 
   const npub = profile?.nostrPubkey ? truncateNpub(hexToNpub(profile.nostrPubkey)) : '';
+  const hasNostr = !!profile?.nostrPubkey;
+  const hasEmail = !!profile?.email;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6" data-testid="page-account-settings">
+      {/* Linked Accounts */}
+      <Card data-testid="card-linked-accounts">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 className="w-5 h-5" />
+            Linked Accounts
+          </CardTitle>
+          <CardDescription>
+            Connect multiple login methods to your account for easier access
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* NOSTR Status */}
+          <div className="flex items-center justify-between p-3 border rounded-md">
+            <div className="flex items-center gap-3">
+              <Key className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <div className="font-medium">NOSTR</div>
+                {hasNostr ? (
+                  <div className="text-sm text-muted-foreground font-mono">
+                    {npub}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    Not linked
+                  </div>
+                )}
+              </div>
+            </div>
+            {hasNostr ? (
+              <div className="flex items-center gap-2 text-primary">
+                <Check className="w-4 h-4" />
+                <span className="text-sm">Linked</span>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleLinkNostr}
+                disabled={isLinkingNostr}
+                data-testid="button-link-nostr"
+              >
+                {isLinkingNostr ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Link2 className="w-4 h-4 mr-2" />
+                )}
+                Link NOSTR
+              </Button>
+            )}
+          </div>
+
+          {/* Email Status */}
+          <div className="flex items-center justify-between p-3 border rounded-md">
+            <div className="flex items-center gap-3">
+              <Mail className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <div className="font-medium">Email</div>
+                {hasEmail ? (
+                  <div className="text-sm text-muted-foreground">
+                    {profile.email}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">
+                    Not linked
+                  </div>
+                )}
+              </div>
+            </div>
+            {hasEmail ? (
+              <div className="flex items-center gap-2 text-primary">
+                <Check className="w-4 h-4" />
+                <span className="text-sm">Linked</span>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => setShowLinkEmailDialog(true)}
+                data-testid="button-link-email"
+              >
+                <Link2 className="w-4 h-4 mr-2" />
+                Link Email
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Profile Information */}
       <Card data-testid="card-profile">
         <CardHeader>
@@ -218,17 +478,6 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
           <CardDescription>Manage your account settings</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="nostr-pubkey">NOSTR Public Key</Label>
-            <Input
-              id="nostr-pubkey"
-              value={npub}
-              readOnly
-              data-testid="input-nostr-pubkey"
-              className="font-mono text-sm"
-            />
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="display-name">Display Name</Label>
             <div className="flex gap-2">
@@ -367,6 +616,129 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
           )}
         </CardContent>
       </Card>
+
+      {/* Link Email Dialog */}
+      <Dialog open={showLinkEmailDialog} onOpenChange={setShowLinkEmailDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link Email Address</DialogTitle>
+            <DialogDescription>
+              Add an email address to your account for an alternative login method.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {!emailLinkSent ? (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="link-email">Email Address</Label>
+                <Input
+                  id="link-email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={linkEmailInput}
+                  onChange={(e) => setLinkEmailInput(e.target.value)}
+                  data-testid="input-link-email"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowLinkEmailDialog(false);
+                    setLinkEmailInput('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleLinkEmailRequest}
+                  disabled={isLinkingEmail || !linkEmailInput.trim()}
+                  data-testid="button-send-link-email"
+                >
+                  {isLinkingEmail ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Mail className="w-4 h-4 mr-2" />
+                  )}
+                  Send Verification Link
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-3 p-4 bg-primary/5 border border-primary/20 rounded-md">
+                <Check className="w-5 h-5 text-primary" />
+                <div>
+                  <div className="font-medium">Verification email sent!</div>
+                  <div className="text-sm text-muted-foreground">
+                    Check your inbox and click the link to complete linking.
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={() => {
+                    setShowLinkEmailDialog(false);
+                    setEmailLinkSent(false);
+                    setLinkEmailInput('');
+                  }}
+                >
+                  Close
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Accounts Dialog */}
+      <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Account Already Exists</DialogTitle>
+            <DialogDescription>
+              This login method is already linked to a different account. Would you like to merge the accounts?
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="p-4 bg-muted/50 rounded-md space-y-2">
+              <div className="font-medium">What happens when you merge:</div>
+              <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                <li>All transactions from the other account will be moved here</li>
+                <li>All comments and uploads will be transferred</li>
+                <li>The other account will be deleted</li>
+                <li>You can then login with either method</li>
+              </ul>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowMergeDialog(false);
+                setMergeConflictUserId(null);
+              }}
+              disabled={isMerging}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMergeAccounts}
+              disabled={isMerging}
+              data-testid="button-merge-accounts"
+            >
+              {isMerging ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="w-4 h-4 mr-2" />
+              )}
+              Merge Accounts
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

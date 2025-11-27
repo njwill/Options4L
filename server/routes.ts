@@ -247,6 +247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         profile: {
           id: profile.id,
           nostrPubkey: profile.nostrPubkey,
+          email: profile.email,
           displayName: profile.displayName,
           createdAt: profile.createdAt,
           lastLoginAt: profile.lastLoginAt,

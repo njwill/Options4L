@@ -2,22 +2,7 @@
 
 ## Overview
 
-A comprehensive trading analysis application designed to process Robinhood trading data from CSV/Excel files and provide detailed insights into options strategies, position tracking, and performance analytics. The application automatically detects complex multi-leg strategies, tracks position rolls across time, and calculates profit/loss metrics with win rate statistics.
-
-**Core Functionality:**
-- File upload and parsing (CSV/XLSX support)
-- Automated options strategy classification (spreads, straddles, iron condors, etc.)
-- Position tracking with FIFO accounting
-- Roll detection and chain linking across related positions
-- Real-time P/L calculations and performance metrics
-- Interactive dashboard with filtering and detailed position views
-- **Dual Authentication:** NOSTR (NIP-07) and Email (magic link) authentication options
-- Transaction deduplication for authenticated users
-- Session import to save anonymous data after login
-- Account management with upload history and data export
-- Transaction comments - add notes to individual trades (authenticated users only)
-- Position comments - add notes to open/closed positions (authenticated users only)
-- Comment notification badges - blue circular badges show comment counts on MessageSquare icons
+A comprehensive trading analysis application designed to process Robinhood trading data from CSV/Excel files, providing detailed insights into options strategies, position tracking, and performance analytics. The application automates the detection of complex multi-leg strategies, tracks position rolls across time, and calculates profit/loss metrics with win rate statistics. It features dual authentication (NOSTR and Email magic link), account linking/merging, transaction deduplication, and a robust data persistence model for authenticated users. The project aims to offer a powerful, user-friendly tool for detailed options trading analysis.
 
 ## User Preferences
 
@@ -27,223 +12,49 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend Architecture
 
-**Framework:** React 18 with TypeScript and Vite for fast development and build optimization.
-
-**UI Component System:** shadcn/ui with Radix UI primitives, implementing Carbon Design System principles for data-intensive interfaces. The design prioritizes scannable tables, clear data hierarchy, and efficient workflows over visual decoration.
-
-**State Management:** Local React state with TanStack Query for server state management and AuthProvider context for user authentication. The application uses a single-page architecture with tab-based navigation, maintaining uploaded data in component state to avoid unnecessary re-uploads.
-
-**Styling:** Tailwind CSS with a custom design token system supporting light/dark themes. Uses IBM Plex Sans font family for consistency with Carbon Design System guidelines.
-
-**Key Design Decisions:**
-- Client-side data processing after initial upload to minimize server round-trips
-- Tabular data presentation with sortable columns and pagination for large datasets
-- Filter bars with multi-criteria search (symbol, strategy type, status)
-- Modal/dialog-based detail views for deep-diving into positions and roll chains
-- Interactive charts for visual performance analysis (Recharts library)
-
-**Dashboard Visualizations:**
-- **Summary Cards** - Four key metrics:
-  - Total P/L (realized + unrealized): Overall portfolio performance including open positions
-  - Open Positions: Count of currently active trades
-  - Win Rate: Percentage of profitable closed trades with W/L ratio
-  - Total P/L (realized): Locked-in profits/losses from closed positions only
-- **P/L Over Time Chart** - Dual-line chart showing:
-  - Realized P/L (solid line): Cumulative profit/loss from closed positions over time
-  - Total P/L (dashed line): Realized + unrealized P/L including open positions
-  - Gap between lines represents current unrealized gains/losses from open positions
-  - Includes "current" snapshot point to show present-day total P/L
-- **Strategy Performance Chart** - Bar chart comparing total P/L across strategy types
-  - Color-coded bars (green for profits, red for losses)
-  - Sorted by performance (best to worst)
-  - Tooltips show count and average P/L per strategy
+**Framework:** React 18 with TypeScript and Vite.
+**UI Component System:** shadcn/ui with Radix UI primitives, adhering to Carbon Design System principles for data-intensive interfaces. Prioritizes scannable tables, clear data hierarchy, and efficient workflows.
+**State Management:** Local React state, TanStack Query for server state, and AuthProvider for authentication context.
+**Styling:** Tailwind CSS with a custom design token system for light/dark themes, using IBM Plex Sans font.
+**Key Design Decisions:** Client-side data processing post-upload, tabular data presentation with sorting and pagination, filter bars, modal detail views, and interactive charts (Recharts) for performance analysis.
+**Dashboard Visualizations:** Includes summary cards (Total P/L, Open Positions, Win Rate, Realized P/L), a P/L Over Time chart (Realized vs. Total P/L), and a Strategy Performance bar chart.
 
 ### Backend Architecture
 
-**Server Framework:** Express.js running on Node.js with TypeScript for type safety.
-
-**File Processing Pipeline:**
-1. **Upload Handler** - Multer middleware for multipart/form-data with in-memory storage
-2. **Parser Layer** - Dual support for CSV (PapaParse) and Excel (XLSX) files
-3. **Consolidation Engine** - Merges split transactions using weighted averages
-4. **Position Builder** - FIFO lot tracking to construct positions from raw transactions
-5. **Strategy Classifier** - Rule-based algorithm detecting 20+ options strategies
-6. **Roll Detector** - Pattern matching to identify and chain related positions
-
-**Data Flow:**
-- Raw transaction data → Parsed transactions → Consolidated transactions → Positions + Rolls → Summary statistics
-- Each position maintains references to constituent transactions for audit trail
-- Roll chains link positions that are temporally related (closing old position + opening new position on same day)
-
-**Key Architectural Choices:**
-- Dual-mode storage: In-memory for anonymous users, PostgreSQL for authenticated users
-- NOSTR authentication (NIP-07) with JWT session management via httpOnly cookies
-- Transaction deduplication using hash-based uniqueness (user_id + transaction_hash)
-- Synchronous processing pipeline to ensure data consistency
-- Comprehensive error handling with transaction-level anomaly tracking
+**Server Framework:** Express.js running on Node.js with TypeScript.
+**File Processing Pipeline:** Handles file uploads (Multer), parsing (PapaParse for CSV, XLSX for Excel), transaction consolidation, FIFO-based position building, rule-based options strategy classification (20+ strategies), and roll detection.
+**Data Flow:** Raw transactions are processed into consolidated transactions, then positions and rolls, finally generating summary statistics. Positions maintain references to constituent transactions, and roll chains link related positions.
+**Key Architectural Choices:** Dual-mode storage (in-memory for anonymous users, PostgreSQL for authenticated), NOSTR authentication (NIP-07) with JWT, email magic link authentication, and transaction deduplication using hash-based uniqueness.
 
 ### Data Models
 
-**Transaction Schema:**
-- Core fields: activityDate, instrument, transCode (Buy/Sell/STO/BTO/etc.), quantity, price, amount
-- Parsed option details: symbol, expiration, strike, optionType (Call/Put)
-- Enrichment fields: positionId, strategyTag (added after position building)
-
-**Position Schema:**
-- Multi-leg structure with OptionLeg array (each leg tracks strike, expiration, quantity, direction)
-- Status tracking: 'open' | 'closed'
-- FIFO-based P/L calculation with entry/exit pricing
-- Roll chain linkage via rollChainId
-
-**Roll Detection Logic:**
-- Same-day closing + opening transactions on same underlying symbol
-- Matching option types (Call-to-Call, Put-to-Put)
-- Different expiration dates OR different strike prices
-- Supports both debit and credit rolls (BTC→BTO for long positions, STC→STO for short positions)
-
-**Strategy Classification:**
-- Single-leg: Covered Call, Cash Secured Put, Long/Short Call/Put
-- Two-leg spreads: Vertical spreads (call/put credit/debit), Straddles, Strangles
-- Multi-leg: Iron Condor, Calendar Spread, Diagonal Spread
-- Stock positions: Long/Short Stock tracking
+**Transaction Schema:** Captures core trading details (date, instrument, type, quantity, price, amount) and parsed option specifics (symbol, expiration, strike, type), with enrichment fields like `positionId` and `strategyTag`.
+**Position Schema:** Represents multi-leg structures with `OptionLeg` arrays, tracks status ('open' | 'closed'), and enables FIFO-based P/L calculation and `rollChainId` linkage.
+**Roll Detection Logic:** Identifies same-day closing/opening transactions on the same underlying, matching option types, and differing expiration dates or strike prices.
+**Strategy Classification:** Supports single-leg, two-leg spreads, multi-leg strategies, and stock positions.
 
 ### Session & Storage
 
 **Dual-Mode Implementation:**
-
-**Anonymous Mode (Default):**
-- In-memory storage using Map-based MemStorage class
-- No account required - immediate access to all analysis features
-- Data exists only during current session
-- Privacy-focused - no data persisted to database
-
-**Authenticated Mode (Optional):**
-- **NOSTR authentication** via NIP-07 browser extensions (nos2x, Alby, Flamingo)
-- **Email authentication** via magic link (passwordless, 15-minute token expiration)
-  - Requires SMTP configuration (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM)
-  - Uses user's own SMTP server for sending login emails
-- PostgreSQL storage using Drizzle ORM
-- Persistent data across sessions
-- Transaction deduplication using hash (activityDate, instrument, transCode, quantity, price, amount)
-- Upload history tracking with metadata (filename, date, transaction counts)
-- Session import feature to save anonymous data after login
-- Account management: display name editing, data export to CSV
-
-**Authentication Flows:**
-
-*NOSTR Authentication:*
-1. User clicks "Sign in with NOSTR"
-2. Backend generates challenge (nonce)
-3. Frontend creates NOSTR event (kind 27235) with challenge
-4. NIP-07 extension signs the event
-5. Backend verifies signature and issues JWT in httpOnly cookie
-6. User remains authenticated across sessions
-
-*Email Authentication (Magic Link):*
-1. User clicks "Sign in" and selects Email tab
-2. User enters email address and clicks "Send Login Link"
-3. Backend generates secure token (64 chars), stores with 15-min expiry
-4. Email with magic link sent via configured SMTP server
-5. User clicks link, redirected to /auth/verify?token=xxx
-6. Backend verifies token, creates/finds user, issues JWT
-7. User remains authenticated across sessions
-
-**Deduplication Strategy:**
-- Hash constructed from 6 transaction fields for uniqueness
-- Prevents duplicate data when re-uploading same file
-- Provides feedback showing new vs duplicate transaction counts
-- Preserves data integrity across multiple uploads
+- **Anonymous Mode:** Uses in-memory `MemStorage`, offers immediate access without account, data is session-scoped and not persisted.
+- **Authenticated Mode:** Utilizes PostgreSQL via Drizzle ORM. Supports NOSTR (NIP-07) and Email (magic link) authentication. Provides persistent data, transaction deduplication, upload history, session import for anonymous data, and account management.
+**Authentication Flows:** Both NOSTR (challenge-response with NIP-07 signing) and Email (magic link with secure token) methods issue JWTs.
+**Account Linking & Merging:** Users can link both NOSTR and email to a single account, allowing flexible login and account recovery. Merging transfers all data if an authentication method is already associated with another account.
+**Deduplication Strategy:** Transactions are deduplicated using a hash derived from key transaction fields, preventing redundant data on re-uploads and maintaining data integrity.
+**Comments:** Authenticated users can add notes to individual transactions (linked by `transactionHash`) and positions (linked by `positionHash`), ensuring persistence across re-uploads.
 
 ## External Dependencies
 
 ### Third-Party Libraries
 
-**File Processing:**
-- `papaparse` - CSV parsing with header detection and type inference
-- `xlsx` - Excel file reading and sheet-to-JSON conversion
-
-**Frontend UI:**
-- `@radix-ui/*` - Accessible component primitives (dialogs, dropdowns, tooltips, etc.)
-- `@tanstack/react-query` - Server state management and caching
-- `react-hook-form` + `@hookform/resolvers` - Form validation infrastructure
-- `date-fns` - Date formatting and manipulation
-- `lucide-react` - Icon library
-- `nostr-tools` - NOSTR protocol utilities for authentication
-
-**Authentication:**
-- `jsonwebtoken` - JWT token generation and verification
-- `cookie-parser` - Cookie middleware for Express
-- `nodemailer` - Email sending for magic link authentication
-
-**Backend:**
-- `multer` - File upload middleware
-- `express` - HTTP server framework
-
-**Build Tools:**
-- `vite` - Development server and build tool
-- `esbuild` - Server-side bundling
-- `tailwindcss` - Utility-first CSS framework
-- `typescript` - Type checking across full stack
+**File Processing:** `papaparse` (CSV), `xlsx` (Excel).
+**Frontend UI:** `@radix-ui/*` (component primitives), `@tanstack/react-query` (server state), `react-hook-form` (form validation), `date-fns` (date utilities), `lucide-react` (icons), `nostr-tools` (NOSTR utilities).
+**Authentication:** `jsonwebtoken` (JWTs), `cookie-parser` (cookies), `nodemailer` (email sending).
+**Backend:** `multer` (file uploads), `express` (HTTP server).
+**Build Tools:** `vite`, `esbuild`, `tailwindcss`, `typescript`.
 
 ### Database Configuration
 
-**ORM:** Drizzle ORM configured with PostgreSQL dialect via `@neondatabase/serverless` driver.
-
-**Migration Setup:** Schema defined in `shared/schema.ts` with migration output to `./migrations` directory. Database connection via `DATABASE_URL` environment variable.
-
-**Active Usage:** Database is used for authenticated user data with six main tables:
-- `users` - NOSTR public keys, email addresses, display names, creation timestamps
-- `uploads` - Upload metadata (filename, date, transaction counts)
-- `transactions` - Individual transaction records with deduplication hash
-- `comments` - User notes on transactions, linked by transactionHash for persistence across re-uploads
-- `positionComments` - User notes on positions, linked by positionHash for persistence across re-uploads
-- `email_verification_tokens` - Magic link tokens for email authentication (auto-expire after 15 minutes)
-
-**Schema Highlights:**
-- User-scoped data isolation via foreign keys
-- Composite unique constraint on (user_id + transaction_hash) for deduplication
-- Indexes on user_id and activityDate for query performance
-
-### Development Tools
-
-- `@replit/vite-plugin-*` - Replit-specific development enhancements (error overlay, cartographer, dev banner)
-- Custom Vite configuration with path aliases (`@/`, `@shared/`, `@assets/`)
-- TypeScript with strict mode enabled and ESNext module resolution
-
-## State Management Patterns
-
-### Race Condition Protection
-The application uses refs to guard against race conditions during async operations:
-- `isLoggedInRef` - Guards `loadUserData`, `handleFileUpload`, and `handleImportComplete` by checking if user logged out during the async operation
-- Guards check `startedLoggedIn && !isLoggedInRef.current` to discard results if logout occurred mid-flight
-
-### Transition-Based Logout Detection
-Data clearing on logout uses `prevUserRef` to detect actual logout transitions:
-- `wasLoggedIn = !!prevUserRef.current` - Was there a user before?
-- `isLoggedOut = !user` - Is there no user now?
-- Only clears data when `wasLoggedIn && isLoggedOut`
-- Prevents clearing data for anonymous users who were never logged in
-
-### Auto-Load on Login
-When authenticated users sign in:
-- Retry mechanism with MAX_LOAD_ATTEMPTS=3 and 1000ms delays between attempts
-- Handles transient auth settling issues gracefully
-- Counters reset on logout for fresh retry budget per session
-
-### Transaction Comments
-Comments feature for authenticated users to add notes to individual trades:
-- Comments linked to transactionHash (not transactionId) for persistence across file re-uploads
-- Hash computed from: activityDate, instrument, transCode, quantity, price, amount
-- Frontend uses `computeTransactionHash` utility matching backend hashing
-- API endpoints: GET/POST `/api/comments`, PUT/DELETE `/api/comments/:id`
-- CommentsPanel component with Sheet UI for add/edit/delete operations
-- Notes column visible only in Transaction History table for authenticated users
-
-### Position Comments
-Comments feature for authenticated users to add notes to open/closed positions:
-- Comments linked to positionHash (not database ID) for persistence across file re-uploads
-- Hash computed from: symbol, strategyType, entryDate, and sorted leg signatures (expiration|strike|optionType|direction)
-- Frontend uses `computePositionHash` utility matching backend hashing algorithm
-- API endpoints: GET/POST `/api/position-comments`, PUT/DELETE `/api/position-comments/:id`
-- PositionCommentsPanel component with Sheet UI for add/edit/delete operations
-- Notes column visible only in Open Positions and Closed Positions tables for authenticated users
+**ORM:** Drizzle ORM with PostgreSQL dialect via `@neondatabase/serverless` driver.
+**Schema:** Defined in `shared/schema.ts`, supporting migrations.
+**Active Usage:** Stores authenticated user data across `users`, `uploads`, `transactions`, `comments`, `positionComments`, and `email_verification_tokens` tables. Features user-scoped data isolation, composite unique constraints for deduplication, and indexing for performance.

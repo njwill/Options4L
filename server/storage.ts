@@ -760,3 +760,186 @@ export async function checkEmailRateLimit(email: string): Promise<boolean> {
   const tokenCount = result[0]?.count ?? 0;
   return tokenCount < 3;
 }
+
+// ============================================================================
+// Account Linking Functions
+// ============================================================================
+
+/**
+ * Find user by NOSTR public key
+ */
+export async function findUserByNostrPubkey(nostrPubkey: string): Promise<User | null> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.nostrPubkey, nostrPubkey))
+    .limit(1);
+  
+  return user || null;
+}
+
+/**
+ * Find user by email
+ */
+export async function findUserByEmail(email: string): Promise<User | null> {
+  const normalizedEmail = email.toLowerCase();
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, normalizedEmail))
+    .limit(1);
+  
+  return user || null;
+}
+
+/**
+ * Link NOSTR pubkey to existing user
+ * Returns conflict user if pubkey already belongs to another account
+ */
+export async function linkNostrToUser(
+  userId: string,
+  nostrPubkey: string
+): Promise<{ success: boolean; conflictUserId?: string }> {
+  // Check if this nostrPubkey already belongs to another user
+  const existingUser = await findUserByNostrPubkey(nostrPubkey);
+  
+  if (existingUser && existingUser.id !== userId) {
+    // Pubkey belongs to another account - return conflict
+    return { success: false, conflictUserId: existingUser.id };
+  }
+  
+  // Link the pubkey to the current user
+  await db
+    .update(users)
+    .set({ nostrPubkey })
+    .where(eq(users.id, userId));
+  
+  return { success: true };
+}
+
+/**
+ * Link email to existing user
+ * Returns conflict user if email already belongs to another account
+ */
+export async function linkEmailToUser(
+  userId: string,
+  email: string
+): Promise<{ success: boolean; conflictUserId?: string }> {
+  const normalizedEmail = email.toLowerCase();
+  
+  // Check if this email already belongs to another user
+  const existingUser = await findUserByEmail(normalizedEmail);
+  
+  if (existingUser && existingUser.id !== userId) {
+    // Email belongs to another account - return conflict
+    return { success: false, conflictUserId: existingUser.id };
+  }
+  
+  // Link the email to the current user
+  await db
+    .update(users)
+    .set({ email: normalizedEmail, emailVerified: true })
+    .where(eq(users.id, userId));
+  
+  return { success: true };
+}
+
+/**
+ * Merge all data from one user account to another and delete the source account
+ * Used when account linking detects a conflict and user wants to merge
+ */
+export async function mergeUserAccounts(
+  fromUserId: string,
+  toUserId: string
+): Promise<{ 
+  success: boolean; 
+  merged: { uploads: number; transactions: number; comments: number; positionComments: number } 
+}> {
+  // Transfer all uploads
+  const uploadResult = await db
+    .update(uploads)
+    .set({ userId: toUserId })
+    .where(eq(uploads.userId, fromUserId))
+    .returning();
+  
+  // Transfer all transactions
+  const transactionResult = await db
+    .update(dbTransactions)
+    .set({ userId: toUserId })
+    .where(eq(dbTransactions.userId, fromUserId))
+    .returning();
+  
+  // Transfer all transaction comments
+  const commentResult = await db
+    .update(comments)
+    .set({ userId: toUserId })
+    .where(eq(comments.userId, fromUserId))
+    .returning();
+  
+  // Transfer all position comments
+  const positionCommentResult = await db
+    .update(positionComments)
+    .set({ userId: toUserId })
+    .where(eq(positionComments.userId, fromUserId))
+    .returning();
+  
+  // Transfer manual position groupings
+  await db
+    .update(manualPositionGroupings)
+    .set({ userId: toUserId })
+    .where(eq(manualPositionGroupings.userId, fromUserId));
+  
+  // Copy over any auth methods from the source user that target doesn't have
+  const [fromUser] = await db.select().from(users).where(eq(users.id, fromUserId));
+  const [toUser] = await db.select().from(users).where(eq(users.id, toUserId));
+  
+  if (fromUser && toUser) {
+    const updates: Partial<User> = {};
+    
+    // Copy NOSTR pubkey if target doesn't have one
+    if (fromUser.nostrPubkey && !toUser.nostrPubkey) {
+      updates.nostrPubkey = fromUser.nostrPubkey;
+    }
+    
+    // Copy email if target doesn't have one
+    if (fromUser.email && !toUser.email) {
+      updates.email = fromUser.email;
+      updates.emailVerified = fromUser.emailVerified;
+    }
+    
+    // Copy display name if target doesn't have one
+    if (fromUser.displayName && !toUser.displayName) {
+      updates.displayName = fromUser.displayName;
+    }
+    
+    if (Object.keys(updates).length > 0) {
+      await db.update(users).set(updates).where(eq(users.id, toUserId));
+    }
+  }
+  
+  // Delete the source user account
+  await db.delete(users).where(eq(users.id, fromUserId));
+  
+  return {
+    success: true,
+    merged: {
+      uploads: uploadResult.length,
+      transactions: transactionResult.length,
+      comments: commentResult.length,
+      positionComments: positionCommentResult.length,
+    },
+  };
+}
+
+/**
+ * Get user by ID (for linking verification)
+ */
+export async function getUserByIdFromStorage(userId: string): Promise<User | null> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  
+  return user || null;
+}

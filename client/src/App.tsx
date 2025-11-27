@@ -475,10 +475,12 @@ function EmailVerifyRoute() {
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const token = params.get('token') || '';
+  const isLinking = params.get('link') === 'true';
   
   return (
     <EmailVerify 
-      token={token} 
+      token={token}
+      isLinking={isLinking}
       onComplete={() => setLocation('/')} 
     />
   );

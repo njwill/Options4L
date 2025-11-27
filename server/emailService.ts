@@ -60,6 +60,7 @@ export function isEmailConfigured(): boolean {
 export async function sendMagicLinkEmail(
   email: string,
   magicLink: string,
+  isLinking: boolean = false,
   expiresInMinutes: number = 15
 ): Promise<boolean> {
   const transport = getTransporter();
@@ -71,7 +72,21 @@ export async function sendMagicLinkEmail(
   }
 
   const appName = 'Options4L';
-  const subject = `Sign in to ${appName}`;
+  
+  // Customize message based on whether this is a login or account linking
+  const subject = isLinking 
+    ? `Link your email to ${appName}`
+    : `Sign in to ${appName}`;
+  
+  const heading = isLinking
+    ? 'Link your email address'
+    : 'Sign in to your account';
+  
+  const description = isLinking
+    ? `Click the button below to link this email address to your ${appName} account. This link will expire in ${expiresInMinutes} minutes.`
+    : `Click the button below to sign in to ${appName}. This link will expire in ${expiresInMinutes} minutes.`;
+  
+  const buttonText = isLinking ? 'Link Email' : 'Sign In';
   
   const html = `
 <!DOCTYPE html>
@@ -87,9 +102,9 @@ export async function sendMagicLinkEmail(
   </div>
   
   <div style="background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 10px 10px;">
-    <h2 style="color: #333; margin-top: 0;">Sign in to your account</h2>
+    <h2 style="color: #333; margin-top: 0;">${heading}</h2>
     
-    <p>Click the button below to sign in to ${appName}. This link will expire in ${expiresInMinutes} minutes.</p>
+    <p>${description}</p>
     
     <div style="text-align: center; margin: 30px 0;">
       <a href="${magicLink}" 
@@ -100,7 +115,7 @@ export async function sendMagicLinkEmail(
                 border-radius: 6px; 
                 font-weight: 600;
                 display: inline-block;">
-        Sign In
+        ${buttonText}
       </a>
     </div>
     
@@ -119,10 +134,11 @@ export async function sendMagicLinkEmail(
 </html>
   `.trim();
 
+  const textAction = isLinking ? 'link your email' : 'sign in';
   const text = `
-Sign in to ${appName}
+${heading}
 
-Click the link below to sign in. This link will expire in ${expiresInMinutes} minutes.
+Click the link below to ${textAction}. This link will expire in ${expiresInMinutes} minutes.
 
 ${magicLink}
 
