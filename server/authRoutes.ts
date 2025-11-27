@@ -152,13 +152,14 @@ router.get('/email/status', async (req: Request, res: Response) => {
  */
 router.post('/email/request', async (req: Request, res: Response) => {
   try {
-    const { email } = req.body as { email: string };
+    const { email: rawEmail } = req.body as { email: string };
     
-    if (!email || typeof email !== 'string') {
+    if (!rawEmail || typeof rawEmail !== 'string') {
       return res.status(400).json({ error: 'Email is required' });
     }
     
-    // Basic email validation
+    // Normalize and validate email
+    const email = rawEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
