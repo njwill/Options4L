@@ -1,7 +1,7 @@
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping } from '@shared/schema';
-import { eq, and, count, asc, desc, sql, max, inArray } from 'drizzle-orm';
+import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, users, emailVerificationTokens, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type User, type EmailVerificationToken } from '@shared/schema';
+import { eq, and, count, asc, desc, sql, max, inArray, lt } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
 /**
@@ -626,4 +626,137 @@ export async function isTransactionGrouped(
   }
   
   return { grouped: false, groupId: null, strategyType: null };
+}
+
+// ============================================================================
+// Email Authentication Functions
+// ============================================================================
+
+/**
+ * Generate a secure random token for email verification
+ */
+function generateSecureToken(): string {
+  return randomBytes(32).toString('hex');
+}
+
+/**
+ * Create an email verification token
+ */
+export async function createEmailVerificationToken(
+  email: string,
+  expiresInMinutes: number = 15
+): Promise<string> {
+  const token = generateSecureToken();
+  const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+  
+  await db.insert(emailVerificationTokens).values({
+    email: email.toLowerCase(),
+    token,
+    expiresAt,
+  });
+  
+  return token;
+}
+
+/**
+ * Verify and consume an email verification token
+ * Returns the email if valid, null if invalid/expired/used
+ */
+export async function verifyEmailToken(
+  token: string
+): Promise<string | null> {
+  const [result] = await db
+    .select()
+    .from(emailVerificationTokens)
+    .where(eq(emailVerificationTokens.token, token));
+  
+  if (!result) {
+    return null;
+  }
+  
+  if (result.used) {
+    return null;
+  }
+  
+  if (new Date() > result.expiresAt) {
+    return null;
+  }
+  
+  // Mark token as used
+  await db
+    .update(emailVerificationTokens)
+    .set({ used: true })
+    .where(eq(emailVerificationTokens.id, result.id));
+  
+  return result.email;
+}
+
+/**
+ * Find or create a user by email
+ */
+export async function findOrCreateUserByEmail(
+  email: string
+): Promise<User> {
+  const normalizedEmail = email.toLowerCase();
+  
+  // Check if user already exists
+  const [existingUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, normalizedEmail));
+  
+  if (existingUser) {
+    // Update last login
+    await db
+      .update(users)
+      .set({ lastLoginAt: new Date(), emailVerified: true })
+      .where(eq(users.id, existingUser.id));
+    
+    return { ...existingUser, lastLoginAt: new Date(), emailVerified: true };
+  }
+  
+  // Create new user
+  const [newUser] = await db
+    .insert(users)
+    .values({
+      email: normalizedEmail,
+      emailVerified: true,
+      displayName: normalizedEmail.split('@')[0],
+    })
+    .returning();
+  
+  return newUser;
+}
+
+/**
+ * Clean up expired and used tokens (housekeeping)
+ */
+export async function cleanupExpiredTokens(): Promise<number> {
+  const result = await db
+    .delete(emailVerificationTokens)
+    .where(
+      sql`${emailVerificationTokens.expiresAt} < NOW() OR ${emailVerificationTokens.used} = true`
+    )
+    .returning();
+  
+  return result.length;
+}
+
+/**
+ * Check rate limit for email sends (max 3 per hour per email)
+ */
+export async function checkEmailRateLimit(email: string): Promise<boolean> {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const normalizedEmail = email.toLowerCase();
+  
+  const result = await db
+    .select({ count: count() })
+    .from(emailVerificationTokens)
+    .where(and(
+      eq(emailVerificationTokens.email, normalizedEmail),
+      sql`${emailVerificationTokens.createdAt} > ${oneHourAgo}`
+    ));
+  
+  const tokenCount = result[0]?.count ?? 0;
+  return tokenCount < 3;
 }

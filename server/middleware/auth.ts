@@ -37,6 +37,7 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
       req.user = {
         id: user.id,
         nostrPubkey: user.nostrPubkey,
+        email: user.email,
         displayName: user.displayName,
       };
     }
@@ -83,6 +84,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.user = {
       id: user.id,
       nostrPubkey: user.nostrPubkey,
+      email: user.email,
       displayName: user.displayName,
     };
     

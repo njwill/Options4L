@@ -6,7 +6,16 @@ import {
   verifyNostrSignature,
   findOrCreateUser,
   generateToken,
+  getUserById,
+  type AuthUser,
 } from './auth';
+import {
+  createEmailVerificationToken,
+  verifyEmailToken,
+  findOrCreateUserByEmail,
+  checkEmailRateLimit,
+} from './storage';
+import { sendMagicLinkEmail, isEmailConfigured } from './emailService';
 import './types';
 
 const router = Router();
@@ -111,6 +120,148 @@ router.get('/me', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Failed to get user' });
+  }
+});
+
+// ============================================================================
+// Email Authentication Routes
+// ============================================================================
+
+/**
+ * GET /api/auth/email/status
+ * Check if email authentication is configured
+ */
+router.get('/email/status', async (req: Request, res: Response) => {
+  try {
+    res.json({ 
+      configured: isEmailConfigured(),
+    });
+  } catch (error) {
+    console.error('Email status check error:', error);
+    res.status(500).json({ error: 'Failed to check email status' });
+  }
+});
+
+/**
+ * POST /api/auth/email/request
+ * Request a magic link to be sent to email
+ * 
+ * Body: {
+ *   email: string
+ * }
+ */
+router.post('/email/request', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body as { email: string };
+    
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+    
+    // Check if email is configured
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ 
+        error: 'Email authentication is not configured. Please use NOSTR authentication or contact the administrator.' 
+      });
+    }
+    
+    // Check rate limit
+    const withinLimit = await checkEmailRateLimit(email);
+    if (!withinLimit) {
+      return res.status(429).json({ 
+        error: 'Too many login attempts. Please wait before trying again.' 
+      });
+    }
+    
+    // Create verification token
+    const token = await createEmailVerificationToken(email);
+    
+    // Build magic link URL
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const magicLink = `${baseUrl}/auth/verify?token=${token}`;
+    
+    // Send email
+    const sent = await sendMagicLinkEmail(email, magicLink);
+    
+    if (!sent) {
+      return res.status(500).json({ error: 'Failed to send login email. Please try again.' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Login link sent! Check your email inbox.' 
+    });
+  } catch (error) {
+    console.error('Email request error:', error);
+    res.status(500).json({ error: 'Failed to send login email' });
+  }
+});
+
+/**
+ * POST /api/auth/email/verify
+ * Verify magic link token and create session
+ * 
+ * Body: {
+ *   token: string
+ * }
+ */
+router.post('/email/verify', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body as { token: string };
+    
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+    
+    // Verify token and get email
+    const email = await verifyEmailToken(token);
+    
+    if (!email) {
+      return res.status(401).json({ 
+        error: 'Invalid or expired link. Please request a new login link.' 
+      });
+    }
+    
+    // Find or create user by email
+    const dbUser = await findOrCreateUserByEmail(email);
+    
+    // Convert to AuthUser format
+    const authUser: AuthUser = {
+      id: dbUser.id,
+      nostrPubkey: dbUser.nostrPubkey,
+      email: dbUser.email,
+      displayName: dbUser.displayName,
+    };
+    
+    // Generate JWT token
+    const jwtToken = generateToken(authUser);
+    
+    // Set httpOnly cookie
+    res.cookie('auth_token', jwtToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    
+    res.json({
+      success: true,
+      user: {
+        id: authUser.id,
+        nostrPubkey: authUser.nostrPubkey,
+        email: authUser.email,
+        displayName: authUser.displayName,
+      },
+    });
+  } catch (error) {
+    console.error('Email verify error:', error);
+    res.status(500).json({ error: 'Failed to verify login link' });
   }
 });
 

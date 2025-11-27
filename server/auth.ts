@@ -20,7 +20,8 @@ setInterval(() => {
 
 export interface AuthUser {
   id: string;
-  nostrPubkey: string;
+  nostrPubkey: string | null;
+  email: string | null;
   displayName: string | null;
 }
 
@@ -110,6 +111,7 @@ export async function findOrCreateUser(nostrPubkey: string): Promise<AuthUser> {
     return {
       id: user.id,
       nostrPubkey: user.nostrPubkey,
+      email: user.email,
       displayName: user.displayName,
     };
   }
@@ -127,6 +129,7 @@ export async function findOrCreateUser(nostrPubkey: string): Promise<AuthUser> {
   return {
     id: newUser.id,
     nostrPubkey: newUser.nostrPubkey,
+    email: newUser.email,
     displayName: newUser.displayName,
   };
 }
@@ -139,6 +142,7 @@ export function generateToken(user: AuthUser): string {
     {
       userId: user.id,
       nostrPubkey: user.nostrPubkey,
+      email: user.email,
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
@@ -148,14 +152,35 @@ export function generateToken(user: AuthUser): string {
 /**
  * Verify JWT token and return user data
  */
-export function verifyToken(token: string): { userId: string; nostrPubkey: string } | null {
+export function verifyToken(token: string): { userId: string; nostrPubkey: string | null; email: string | null } | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as {
       userId: string;
-      nostrPubkey: string;
+      nostrPubkey: string | null;
+      email: string | null;
     };
     return decoded;
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Get user by ID
+ */
+export async function getUserById(userId: string): Promise<AuthUser | null> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  
+  if (!user) return null;
+  
+  return {
+    id: user.id,
+    nostrPubkey: user.nostrPubkey,
+    email: user.email,
+    displayName: user.displayName,
+  };
 }
