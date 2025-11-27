@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import type { Transaction, StrategyType } from '@shared/schema';
 import { format } from 'date-fns';
-import { Layers, AlertTriangle } from 'lucide-react';
+import { Layers, AlertTriangle, AlertCircle } from 'lucide-react';
 
 interface GroupPositionModalProps {
   isOpen: boolean;
@@ -141,6 +141,41 @@ export function GroupPositionModal({
   // Get unique symbols
   const symbols = Array.from(new Set(selectedTransactions.map(t => t.instrument)));
 
+  // Check if transactions can form valid positions
+  // Opening transactions (STO/BTO) are required to create positions
+  const transactionAnalysis = useMemo(() => {
+    const openingCodes = ['STO', 'BTO'];
+    const closingCodes = ['STC', 'BTC', 'OEXP', 'OASGN'];
+    const stockCodes = ['Buy', 'Sell'];
+    
+    const opening = selectedTransactions.filter(t => openingCodes.includes(t.transCode));
+    const closing = selectedTransactions.filter(t => closingCodes.includes(t.transCode));
+    const stock = selectedTransactions.filter(t => stockCodes.includes(t.transCode));
+    
+    const hasOpening = opening.length > 0;
+    const hasOnlyClosing = !hasOpening && closing.length > 0;
+    const hasOnlyStock = !hasOpening && !hasOnlyClosing && stock.length > 0;
+    
+    // Error message based on what was selected
+    let errorMessage = '';
+    if (hasOnlyStock) {
+      errorMessage = 'Stock transactions (Buy/Sell) cannot be grouped into option positions. Manual grouping is for options only.';
+    } else if (hasOnlyClosing) {
+      errorMessage = "You've selected only closing transactions (STC/BTC). Positions require at least one opening transaction (STO/BTO). This usually means the opening trades are missing from your uploaded file.";
+    }
+    
+    return {
+      openingCount: opening.length,
+      closingCount: closing.length,
+      stockCount: stock.length,
+      hasOpening,
+      hasOnlyClosing,
+      hasOnlyStock,
+      canFormPosition: hasOpening, // Need at least one opening transaction
+      errorMessage,
+    };
+  }, [selectedTransactions]);
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-[600px]" data-testid="group-position-modal">
@@ -241,13 +276,28 @@ export function GroupPositionModal({
             </div>
           </div>
 
+          {/* Error: Cannot form valid position */}
+          {!transactionAnalysis.canFormPosition && transactionAnalysis.errorMessage && (
+            <div className="flex items-start gap-2 text-sm bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md p-3">
+              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium text-red-700 dark:text-red-400">Cannot group these transactions</p>
+                <p className="text-red-600 dark:text-red-400 mt-1">
+                  {transactionAnalysis.errorMessage}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Warning about re-upload behavior */}
-          <div className="flex items-start gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
-            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-            <p>
-              Manual groupings persist across file re-uploads. To undo, you can remove the grouping from the position view.
-            </p>
-          </div>
+          {transactionAnalysis.canFormPosition && (
+            <div className="flex items-start gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <p>
+                Manual groupings persist across file re-uploads. To undo, you can remove the grouping from the position view.
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -256,7 +306,7 @@ export function GroupPositionModal({
           </Button>
           <Button 
             onClick={handleSubmit} 
-            disabled={!strategyType || isSubmitting}
+            disabled={!strategyType || isSubmitting || !transactionAnalysis.canFormPosition}
             data-testid="button-confirm-group"
           >
             {isSubmitting ? 'Creating...' : 'Create Position'}

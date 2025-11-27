@@ -134,7 +134,16 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     {
       key: 'strategy',
       header: 'Strategy',
-      accessor: (row) => <StrategyBadge strategy={row.strategyType} />,
+      accessor: (row) => (
+        <div className="flex items-center gap-1.5">
+          <StrategyBadge strategy={row.strategyType} />
+          {row.isManuallyGrouped && (
+            <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400">
+              Manual
+            </Badge>
+          )}
+        </div>
+      ),
       sortValue: (row) => row.strategyType,
     },
     {
