@@ -424,7 +424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch live option data from Alpha Vantage
+  // Fetch live stock quotes from Alpha Vantage (for underlying prices)
   app.post('/api/options/quotes', async (req, res) => {
     try {
       if (!req.user) {
@@ -471,7 +471,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               latestTradingDay: quote['07. latest trading day'],
             };
           } else if (data['Note']) {
-            // API limit reached
             errors.push(`Rate limit reached: ${data['Note']}`);
             break;
           } else if (data['Error Message']) {
@@ -495,6 +494,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to fetch option quotes',
+      });
+    }
+  });
+
+  // Fetch options chain with Greeks from Alpha Vantage
+  interface OptionLegRequest {
+    symbol: string;
+    strike: number;
+    expiration: string; // Format: MM/DD/YYYY or YYYY-MM-DD
+    type: 'call' | 'put';
+    legId: string; // Unique identifier to match back to frontend
+  }
+
+  app.post('/api/options/chain', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const apiKey = await getUserAlphaVantageApiKey(req.user.id);
+      if (!apiKey) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Alpha Vantage API key not configured. Add your API key in Account Settings.' 
+        });
+      }
+
+      const { legs } = req.body as { legs: OptionLegRequest[] };
+      if (!legs || !Array.isArray(legs) || legs.length === 0) {
+        return res.status(400).json({ success: false, message: 'Option legs array required' });
+      }
+
+      // Group legs by underlying symbol to minimize API calls
+      const symbolGroups: Record<string, OptionLegRequest[]> = {};
+      for (const leg of legs) {
+        if (!symbolGroups[leg.symbol]) {
+          symbolGroups[leg.symbol] = [];
+        }
+        symbolGroups[leg.symbol].push(leg);
+      }
+
+      const uniqueSymbols = Object.keys(symbolGroups);
+      
+      // Limit symbols to prevent excessive API usage (5 per request for free tier)
+      const limitedSymbols = uniqueSymbols.slice(0, 5);
+      const optionData: Record<string, any> = {}; // keyed by legId
+      const chainCache: Record<string, any[]> = {}; // cache chains by symbol
+      const errors: string[] = [];
+
+      // Helper to normalize date format to YYYY-MM-DD for comparison
+      const normalizeDate = (dateStr: string): string => {
+        if (!dateStr) return '';
+        // Handle MM/DD/YYYY format
+        if (dateStr.includes('/')) {
+          const parts = dateStr.split('/');
+          if (parts.length === 3) {
+            const [month, day, year] = parts;
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+        }
+        // Already YYYY-MM-DD
+        return dateStr;
+      };
+
+      // Fetch options chain for each unique symbol
+      for (const symbol of limitedSymbols) {
+        try {
+          const url = `https://www.alphavantage.co/query?function=REALTIME_OPTIONS&symbol=${encodeURIComponent(symbol)}&require_greeks=true&apikey=${apiKey}`;
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (data['Note']) {
+            errors.push(`Rate limit reached: ${data['Note']}`);
+            break;
+          }
+
+          if (data['Error Message']) {
+            errors.push(`Error for ${symbol}: ${data['Error Message']}`);
+            continue;
+          }
+
+          // Alpha Vantage returns options in 'data' array
+          const optionsChain = data.data || [];
+          chainCache[symbol] = optionsChain;
+
+          // Match user's requested contracts from the chain
+          const legsForSymbol = symbolGroups[symbol];
+          
+          for (const leg of legsForSymbol) {
+            const normalizedExpiration = normalizeDate(leg.expiration);
+            const legType = leg.type.toLowerCase();
+            
+            // Find matching contract in chain
+            const matchedContract = optionsChain.find((contract: any) => {
+              const contractExpiration = contract.expiration || '';
+              const contractType = (contract.type || '').toLowerCase();
+              const contractStrike = parseFloat(contract.strike) || 0;
+              
+              return (
+                contractExpiration === normalizedExpiration &&
+                contractType === legType &&
+                Math.abs(contractStrike - leg.strike) < 0.01 // Float comparison tolerance
+              );
+            });
+
+            if (matchedContract) {
+              optionData[leg.legId] = {
+                symbol: leg.symbol,
+                strike: leg.strike,
+                expiration: leg.expiration,
+                type: leg.type,
+                contractId: matchedContract.contractID || null,
+                // Prices
+                bid: parseFloat(matchedContract.bid) || 0,
+                ask: parseFloat(matchedContract.ask) || 0,
+                last: parseFloat(matchedContract.last) || 0,
+                mark: matchedContract.mark ? parseFloat(matchedContract.mark) : 
+                      ((parseFloat(matchedContract.bid) || 0) + (parseFloat(matchedContract.ask) || 0)) / 2,
+                // Greeks
+                delta: parseFloat(matchedContract.delta) || null,
+                gamma: parseFloat(matchedContract.gamma) || null,
+                theta: parseFloat(matchedContract.theta) || null,
+                vega: parseFloat(matchedContract.vega) || null,
+                rho: parseFloat(matchedContract.rho) || null,
+                impliedVolatility: parseFloat(matchedContract.implied_volatility) || null,
+                // Volume
+                volume: parseInt(matchedContract.volume) || 0,
+                openInterest: parseInt(matchedContract.open_interest) || 0,
+                // Underlying
+                underlyingPrice: parseFloat(data.underlying_price) || null,
+              };
+            } else {
+              // Contract not found in chain - might be expired or not trading
+              optionData[leg.legId] = {
+                symbol: leg.symbol,
+                strike: leg.strike,
+                expiration: leg.expiration,
+                type: leg.type,
+                error: 'Contract not found in options chain',
+              };
+            }
+          }
+        } catch (err) {
+          errors.push(`Failed to fetch chain for ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+
+      // Track which symbols were skipped due to limit
+      if (uniqueSymbols.length > limitedSymbols.length) {
+        const skipped = uniqueSymbols.slice(5);
+        errors.push(`Skipped ${skipped.length} symbol(s) due to API limit: ${skipped.join(', ')}`);
+      }
+
+      return res.json({
+        success: true,
+        optionData,
+        symbolsFetched: limitedSymbols.length,
+        totalSymbols: uniqueSymbols.length,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (error) {
+      console.error('Fetch options chain error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to fetch options chain',
       });
     }
   });
