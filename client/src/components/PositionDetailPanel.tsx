@@ -108,11 +108,13 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
       
       if (priceData?.mark && priceData.mark > 0) {
         hasValidData = true;
-        const currentValue = priceData.mark * 100 * leg.quantity;
+        const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
+        const currentPrice = priceData.mark;
         const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
+        // Short positions profit when price drops, long positions profit when price rises
         const unrealizedPL = isSell 
-          ? leg.amount - (-currentValue)
-          : currentValue + leg.amount;
+          ? (entryPrice - currentPrice) * leg.quantity * 100
+          : (currentPrice - entryPrice) * leg.quantity * 100;
         totalPL += unrealizedPL;
       }
     });
@@ -222,16 +224,16 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
               {position.legs.map((leg, index) => {
                 const legId = `${position.id}-leg-${index}`;
                 const priceData = legPrices[legId];
-                const originalPrice = Math.abs(leg.amount) / leg.quantity / 100;
+                const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
                 const currentPrice = priceData?.mark;
                 const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
                 
                 let unrealizedPL: number | null = null;
                 if (currentPrice && currentPrice > 0 && leg.status === 'open') {
-                  const currentValue = currentPrice * 100 * leg.quantity;
+                  // Short positions profit when price drops, long positions profit when price rises
                   unrealizedPL = isSell 
-                    ? leg.amount - (-currentValue)
-                    : currentValue + leg.amount;
+                    ? (entryPrice - currentPrice) * leg.quantity * 100
+                    : (currentPrice - entryPrice) * leg.quantity * 100;
                 }
                 
                 return (
@@ -252,7 +254,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
                           </span>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {leg.quantity} contracts @ {formatCurrency(originalPrice)}
+                          {leg.quantity} contracts @ {formatCurrency(entryPrice)}
                         </div>
                       </div>
                       <div className="text-right">
@@ -282,7 +284,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
                           {currentPrice && currentPrice > 0 && (
                             <>
                               <span className="text-muted-foreground">vs Entry:</span>
-                              <span className="font-medium">{formatCurrency(originalPrice)}</span>
+                              <span className="font-medium">{formatCurrency(entryPrice)}</span>
                             </>
                           )}
                         </div>
