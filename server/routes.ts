@@ -424,7 +424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch live stock quotes from Alpha Vantage (for underlying prices)
+  // Fetch live stock quotes from Massive.com (for underlying prices)
   app.post('/api/options/quotes', async (req, res) => {
     try {
       if (!req.user) {
@@ -435,7 +435,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!apiKey) {
         return res.status(400).json({ 
           success: false, 
-          message: 'Alpha Vantage API key not configured. Add your API key in Account Settings.' 
+          message: 'Massive.com API key not configured. Add your API key in Account Settings.' 
         });
       }
 
@@ -449,32 +449,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const quotes: Record<string, any> = {};
       const errors: string[] = [];
 
-      // Fetch quotes for each symbol
+      // Fetch quotes using Massive.com ticker snapshot API
+      // Endpoint: GET /v2/snapshot/locale/us/markets/stocks/tickers/{ticker}
+      // Response: { status: "OK", ticker: { ticker, day, prevDay, todaysChange, todaysChangePerc, ... } }
       for (const symbol of limitedSymbols) {
         try {
-          const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+          const url = `https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(symbol)}?apiKey=${apiKey}`;
           const response = await fetch(url);
           const data = await response.json();
 
-          if (data['Global Quote'] && Object.keys(data['Global Quote']).length > 0) {
-            const quote = data['Global Quote'];
-            quotes[symbol] = {
-              symbol: quote['01. symbol'],
-              price: parseFloat(quote['05. price']) || 0,
-              change: parseFloat(quote['09. change']) || 0,
-              changePercent: quote['10. change percent']?.replace('%', '') || '0',
-              previousClose: parseFloat(quote['08. previous close']) || 0,
-              open: parseFloat(quote['02. open']) || 0,
-              high: parseFloat(quote['03. high']) || 0,
-              low: parseFloat(quote['04. low']) || 0,
-              volume: parseInt(quote['06. volume']) || 0,
-              latestTradingDay: quote['07. latest trading day'],
-            };
-          } else if (data['Note']) {
-            errors.push(`Rate limit reached: ${data['Note']}`);
+          // Handle rate limiting (HTTP 429)
+          if (response.status === 429) {
+            errors.push(`Rate limit reached for ${symbol}. Massive.com free tier allows 5 calls/minute.`);
             break;
-          } else if (data['Error Message']) {
-            errors.push(`Error for ${symbol}: ${data['Error Message']}`);
+          }
+
+          // Handle auth errors (HTTP 401/403)
+          if (response.status === 401 || response.status === 403) {
+            errors.push(`Invalid or expired API key. Please check your Massive.com API key.`);
+            break;
+          }
+
+          // Check for API-level errors (status: "ERROR" in JSON body with HTTP 200)
+          if (data.status === 'ERROR' || data.status === 'NOT_FOUND') {
+            const errorMsg = data.error || data.message || `Unable to fetch data for ${symbol}`;
+            errors.push(`${symbol}: ${errorMsg}`);
+            continue;
+          }
+
+          // Successful response with ticker data
+          if (data.status === 'OK' && data.ticker) {
+            const ticker = data.ticker;
+            quotes[symbol] = {
+              symbol: ticker.ticker || symbol,
+              price: ticker.day?.c || ticker.prevDay?.c || ticker.lastTrade?.p || 0,
+              change: ticker.todaysChange || 0,
+              changePercent: (ticker.todaysChangePerc || 0).toFixed(2),
+              previousClose: ticker.prevDay?.c || 0,
+              open: ticker.day?.o || 0,
+              high: ticker.day?.h || 0,
+              low: ticker.day?.l || 0,
+              volume: ticker.day?.v || 0,
+              latestTradingDay: ticker.updated 
+                ? new Date(ticker.updated / 1000000).toISOString().split('T')[0] 
+                : null,
+            };
+          } else {
+            // Fallback: no data returned
+            errors.push(`No quote data found for ${symbol}`);
           }
         } catch (err) {
           errors.push(`Failed to fetch ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -498,7 +520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch options chain with Greeks from Alpha Vantage
+  // Fetch options chain with Greeks from Massive.com (formerly Polygon.io)
   interface OptionLegRequest {
     symbol: string;
     strike: number;
@@ -517,7 +539,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!apiKey) {
         return res.status(400).json({ 
           success: false, 
-          message: 'Alpha Vantage API key not configured. Add your API key in Account Settings.' 
+          message: 'Massive.com API key not configured. Add your API key in Account Settings.' 
         });
       }
 
@@ -537,7 +559,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const uniqueSymbols = Object.keys(symbolGroups);
       
-      // Limit symbols to prevent excessive API usage (5 per request for free tier)
+      // Limit symbols to prevent excessive API usage (5 per request for free tier - 5 calls/minute)
       const limitedSymbols = uniqueSymbols.slice(0, 5);
       const optionData: Record<string, any> = {}; // keyed by legId
       const chainCache: Record<string, any[]> = {}; // cache chains by symbol
@@ -558,71 +580,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return dateStr;
       };
 
-      // Fetch options chain for each unique symbol
-      // Note: Using HISTORICAL_OPTIONS which works on free tier (REALTIME_OPTIONS requires premium)
-      // Omitting date parameter returns the most recent trading session's data
+      // Fetch options chain for each unique symbol using Massive.com API
+      // Endpoint: GET /v3/snapshot/options/{underlyingAsset}
+      // Response: { status: "OK", results: [ { details, greeks, last_quote, underlying_asset, ... } ] }
       for (const symbol of limitedSymbols) {
         try {
-          const url = `https://www.alphavantage.co/query?function=HISTORICAL_OPTIONS&symbol=${encodeURIComponent(symbol)}&require_greeks=true&apikey=${apiKey}`;
+          // Massive.com API endpoint for options chain snapshot
+          const url = `https://api.massive.com/v3/snapshot/options/${encodeURIComponent(symbol)}?apiKey=${apiKey}&limit=250`;
           const response = await fetch(url);
+          
+          // Check HTTP status codes first (transport-level errors)
+          if (response.status === 429) {
+            errors.push(`Rate limit reached for ${symbol}. Massive.com free tier allows 5 calls/minute.`);
+            break;
+          }
+
+          if (response.status === 401 || response.status === 403) {
+            errors.push(`Invalid or expired API key. Please check your Massive.com API key in Account Settings.`);
+            break;
+          }
+          
           const data = await response.json();
           
-          // Handle informational messages (often premium subscription required)
-          if (data['Information']) {
-            console.log(`[Greeks] ${symbol}: ${data['Information']}`);
-            errors.push(`${symbol}: ${data['Information']}`);
-            // Mark all legs for this symbol as unavailable with specific message
+          // Handle API-level errors (status: "ERROR" in JSON body)
+          if (data.status === 'ERROR' || data.status === 'NOT_FOUND' || data.error) {
+            const errorMsg = data.error || data.message || 'Unknown API error';
+            console.log(`[Greeks] ${symbol} error:`, errorMsg);
+            errors.push(`${symbol}: ${errorMsg}`);
+            // Mark all legs for this symbol as unavailable
             for (const leg of symbolGroups[symbol]) {
               optionData[leg.legId] = {
                 symbol: leg.symbol,
                 strike: leg.strike,
                 expiration: leg.expiration,
                 type: leg.type,
-                error: data['Information'],
+                error: errorMsg,
               };
             }
-            continue; // Skip to next symbol
-          }
-          
-          // Handle explicit error messages
-          if (data['Error Message']) {
-            console.log(`[Greeks] ${symbol} error:`, data['Error Message']);
-          }
-
-          if (data['Note']) {
-            errors.push(`Rate limit reached: ${data['Note']}`);
-            break;
-          }
-
-          if (data['Error Message']) {
-            errors.push(`Error for ${symbol}: ${data['Error Message']}`);
             continue;
           }
 
-          // Alpha Vantage returns options in 'data' array
-          const optionsChain = data.data || [];
+          // Massive.com returns options in 'results' array when status is "OK"
+          const optionsChain = data.results || [];
           chainCache[symbol] = optionsChain;
           
-          // Check if we got valid data or placeholder data from Alpha Vantage
-          if (optionsChain.length > 0) {
-            const sampleContract = optionsChain[0];
-            const sampleExpiration = sampleContract.expiration || '';
-            
-            // Alpha Vantage free tier returns placeholder data like "2099-99-99"
-            if (sampleExpiration.includes('2099') || sampleExpiration === '2099-99-99') {
-              errors.push(`Options data for ${symbol} requires Alpha Vantage premium subscription`);
-              // Mark all legs for this symbol as unavailable
-              for (const leg of symbolGroups[symbol]) {
-                optionData[leg.legId] = {
-                  symbol: leg.symbol,
-                  strike: leg.strike,
-                  expiration: leg.expiration,
-                  type: leg.type,
-                  error: 'Alpha Vantage premium subscription required for real-time options data',
-                };
-              }
-              continue; // Skip to next symbol
+          if (optionsChain.length === 0) {
+            errors.push(`No options data found for ${symbol}`);
+            for (const leg of symbolGroups[symbol]) {
+              optionData[leg.legId] = {
+                symbol: leg.symbol,
+                strike: leg.strike,
+                expiration: leg.expiration,
+                type: leg.type,
+                error: 'No options chain data available',
+              };
             }
+            continue;
           }
 
           // Match user's requested contracts from the chain
@@ -633,10 +646,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const legType = leg.type.toLowerCase();
             
             // Find matching contract in chain
+            // Massive.com structure: details.strike_price, details.expiration_date, details.contract_type
             const matchedContract = optionsChain.find((contract: any) => {
-              const contractExpiration = contract.expiration || '';
-              const contractType = (contract.type || '').toLowerCase();
-              const contractStrike = parseFloat(contract.strike) || 0;
+              const details = contract.details || {};
+              const contractExpiration = details.expiration_date || '';
+              const contractType = (details.contract_type || '').toLowerCase();
+              const contractStrike = parseFloat(details.strike_price) || 0;
               
               return (
                 contractExpiration === normalizedExpiration &&
@@ -646,30 +661,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
 
             if (matchedContract) {
+              const details = matchedContract.details || {};
+              const greeks = matchedContract.greeks || {};
+              const lastQuote = matchedContract.last_quote || {};
+              const lastTrade = matchedContract.last_trade || {};
+              const underlyingAsset = matchedContract.underlying_asset || {};
+              
               optionData[leg.legId] = {
                 symbol: leg.symbol,
                 strike: leg.strike,
                 expiration: leg.expiration,
                 type: leg.type,
-                contractId: matchedContract.contractID || null,
-                // Prices
-                bid: parseFloat(matchedContract.bid) || 0,
-                ask: parseFloat(matchedContract.ask) || 0,
-                last: parseFloat(matchedContract.last) || 0,
-                mark: matchedContract.mark ? parseFloat(matchedContract.mark) : 
-                      ((parseFloat(matchedContract.bid) || 0) + (parseFloat(matchedContract.ask) || 0)) / 2,
-                // Greeks
-                delta: parseFloat(matchedContract.delta) || null,
-                gamma: parseFloat(matchedContract.gamma) || null,
-                theta: parseFloat(matchedContract.theta) || null,
-                vega: parseFloat(matchedContract.vega) || null,
-                rho: parseFloat(matchedContract.rho) || null,
-                impliedVolatility: parseFloat(matchedContract.implied_volatility) || null,
-                // Volume
-                volume: parseInt(matchedContract.volume) || 0,
+                contractId: details.ticker || null,
+                // Prices from last_quote
+                bid: parseFloat(lastQuote.bid) || 0,
+                ask: parseFloat(lastQuote.ask) || 0,
+                last: parseFloat(lastTrade.price) || 0,
+                mark: lastQuote.midpoint ? parseFloat(lastQuote.midpoint) : 
+                      ((parseFloat(lastQuote.bid) || 0) + (parseFloat(lastQuote.ask) || 0)) / 2,
+                // Greeks from Massive.com
+                delta: greeks.delta !== undefined ? parseFloat(greeks.delta) : null,
+                gamma: greeks.gamma !== undefined ? parseFloat(greeks.gamma) : null,
+                theta: greeks.theta !== undefined ? parseFloat(greeks.theta) : null,
+                vega: greeks.vega !== undefined ? parseFloat(greeks.vega) : null,
+                rho: null, // Massive.com doesn't provide rho in snapshot
+                impliedVolatility: matchedContract.implied_volatility !== undefined 
+                  ? parseFloat(matchedContract.implied_volatility) : null,
+                // Volume/Interest
+                volume: matchedContract.day?.volume || 0,
                 openInterest: parseInt(matchedContract.open_interest) || 0,
-                // Underlying
-                underlyingPrice: parseFloat(data.underlying_price) || null,
+                // Underlying price
+                underlyingPrice: parseFloat(underlyingAsset.price) || null,
+                // Additional Massive.com data
+                breakEvenPrice: matchedContract.break_even_price 
+                  ? parseFloat(matchedContract.break_even_price) : null,
               };
             } else {
               // Contract not found in chain - might be expired or not trading
