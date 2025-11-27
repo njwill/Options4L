@@ -521,7 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Fetch options chain with Greeks from Massive.com (formerly Polygon.io)
+  // Fetch options chain with Greeks from Tradier API (free sandbox with Greeks from ORATS)
   interface OptionLegRequest {
     symbol: string;
     strike: number;
@@ -540,7 +540,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!apiKey) {
         return res.status(400).json({ 
           success: false, 
-          message: 'Massive.com API key not configured. Add your API key in Account Settings.' 
+          message: 'Tradier API key not configured. Add your API key in Account Settings.' 
         });
       }
 
@@ -549,24 +549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ success: false, message: 'Option legs array required' });
       }
 
-      // Group legs by underlying symbol to minimize API calls
-      const symbolGroups: Record<string, OptionLegRequest[]> = {};
-      for (const leg of legs) {
-        if (!symbolGroups[leg.symbol]) {
-          symbolGroups[leg.symbol] = [];
-        }
-        symbolGroups[leg.symbol].push(leg);
-      }
-
-      const uniqueSymbols = Object.keys(symbolGroups);
-      
-      // Limit symbols to prevent excessive API usage (5 per request for free tier - 5 calls/minute)
-      const limitedSymbols = uniqueSymbols.slice(0, 5);
-      const optionData: Record<string, any> = {}; // keyed by legId
-      const chainCache: Record<string, any[]> = {}; // cache chains by symbol
-      const errors: string[] = [];
-
-      // Helper to normalize date format to YYYY-MM-DD for comparison
+      // Helper to normalize date format to YYYY-MM-DD for Tradier API
       const normalizeDate = (dateStr: string): string => {
         if (!dateStr) return '';
         // Handle MM/DD/YYYY format
@@ -581,166 +564,147 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return dateStr;
       };
 
-      // Debug: Log requested legs
-      console.log('[Greeks DEBUG] Requested legs:', JSON.stringify(legs.map(l => ({
-        symbol: l.symbol,
-        strike: l.strike,
-        expiration: l.expiration,
-        type: l.type,
-        legId: l.legId
-      })), null, 2));
+      // Group legs by symbol AND expiration (Tradier requires specific expiration per request)
+      const symbolExpirationGroups: Record<string, OptionLegRequest[]> = {};
+      for (const leg of legs) {
+        const normalizedExp = normalizeDate(leg.expiration);
+        const key = `${leg.symbol}|${normalizedExp}`;
+        if (!symbolExpirationGroups[key]) {
+          symbolExpirationGroups[key] = [];
+        }
+        symbolExpirationGroups[key].push(leg);
+      }
 
-      // Fetch options chain for each unique symbol using Massive.com API
-      // Endpoint: GET /v3/snapshot/options/{underlyingAsset}
-      // Response: { status: "OK", results: [ { details, greeks, last_quote, underlying_asset, ... } ] }
-      for (const symbol of limitedSymbols) {
+      const groupKeys = Object.keys(symbolExpirationGroups);
+      
+      // Limit API calls (Tradier sandbox: 60/min, but be conservative)
+      const limitedGroups = groupKeys.slice(0, 20);
+      const optionData: Record<string, any> = {}; // keyed by legId
+      const errors: string[] = [];
+
+      console.log(`[Greeks] Fetching ${limitedGroups.length} symbol/expiration combinations via Tradier`);
+
+      // Fetch options chain for each symbol+expiration combination
+      for (const groupKey of limitedGroups) {
+        const [symbol, expiration] = groupKey.split('|');
+        const legsInGroup = symbolExpirationGroups[groupKey];
+        
         try {
-          // Massive.com API endpoint for options chain snapshot
-          // Use api.polygon.io domain - Massive.com rebranded from Polygon.io but keys work on both
-          const url = `https://api.polygon.io/v3/snapshot/options/${encodeURIComponent(symbol)}?apiKey=${apiKey}&limit=250`;
-          console.log(`[Greeks DEBUG] Fetching: ${url.replace(apiKey, '***')}`);
+          // Tradier API endpoint for options chain with Greeks
+          // Endpoint: GET /v1/markets/options/chains?symbol=X&expiration=YYYY-MM-DD&greeks=true
+          const url = `https://api.tradier.com/v1/markets/options/chains?symbol=${encodeURIComponent(symbol)}&expiration=${expiration}&greeks=true`;
+          console.log(`[Greeks] Fetching: ${symbol} exp ${expiration}`);
           
-          let response;
-          try {
-            response = await fetch(url);
-            console.log(`[Greeks DEBUG] Fetch completed with status: ${response.status}`);
-          } catch (fetchErr) {
-            console.log(`[Greeks DEBUG] Fetch FAILED:`, fetchErr);
-            errors.push(`Network error fetching ${symbol}: ${fetchErr instanceof Error ? fetchErr.message : 'Unknown'}`);
-            continue;
-          }
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Accept': 'application/json',
+            },
+          });
           
-          // Check HTTP status codes first (transport-level errors)
+          // Check HTTP status codes
           if (response.status === 429) {
-            errors.push(`Rate limit reached for ${symbol}. Massive.com free tier allows 5 calls/minute.`);
+            errors.push(`Rate limit reached. Tradier sandbox allows 60 calls/minute.`);
             break;
           }
 
-          if (response.status === 401 || response.status === 403) {
-            errors.push(`Invalid or expired API key. Please check your Massive.com API key in Account Settings.`);
+          if (response.status === 401) {
+            errors.push(`Invalid API key. Please check your Tradier API key in Account Settings.`);
             break;
           }
           
-          let data;
-          try {
-            const rawText = await response.text();
-            console.log(`[Greeks DEBUG] Raw response (first 500 chars):`, rawText.substring(0, 500));
-            data = JSON.parse(rawText);
-          } catch (jsonErr) {
-            console.log(`[Greeks DEBUG] JSON parse FAILED:`, jsonErr);
-            errors.push(`Invalid response from API for ${symbol}`);
-            continue;
+          if (response.status === 403) {
+            errors.push(`Access denied. Make sure you're using a valid Tradier sandbox or production API key.`);
+            break;
           }
           
-          // Debug: Log raw API response structure
-          console.log(`[Greeks DEBUG] ${symbol} HTTP status: ${response.status}`);
-          console.log(`[Greeks DEBUG] ${symbol} Response keys:`, Object.keys(data));
-          console.log(`[Greeks DEBUG] ${symbol} data.status:`, data.status);
-          console.log(`[Greeks DEBUG] ${symbol} results count:`, data.results?.length || 0);
-          if (data.results && data.results.length > 0) {
-            console.log(`[Greeks DEBUG] ${symbol} First result sample:`, JSON.stringify(data.results[0], null, 2));
-          }
-          
-          // Handle API-level errors (status: "ERROR" in JSON body)
-          if (data.status === 'ERROR' || data.status === 'NOT_FOUND' || data.error) {
-            const errorMsg = data.error || data.message || 'Unknown API error';
-            console.log(`[Greeks] ${symbol} error:`, errorMsg);
-            errors.push(`${symbol}: ${errorMsg}`);
-            // Mark all legs for this symbol as unavailable
-            for (const leg of symbolGroups[symbol]) {
+          // Check content type - Tradier may return XML/text for errors
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            const textBody = await response.text();
+            console.error(`[Greeks] Non-JSON response for ${symbol}:`, textBody.substring(0, 200));
+            errors.push(`Invalid response format for ${symbol}. Check your API key.`);
+            for (const leg of legsInGroup) {
               optionData[leg.legId] = {
                 symbol: leg.symbol,
                 strike: leg.strike,
                 expiration: leg.expiration,
                 type: leg.type,
-                error: errorMsg,
+                error: 'Invalid API response format',
               };
             }
             continue;
           }
 
-          // Massive.com returns options in 'results' array when status is "OK"
-          const optionsChain = data.results || [];
-          chainCache[symbol] = optionsChain;
+          const data = await response.json();
+          
+          // Tradier returns { options: { option: [...] } } or { options: null }
+          const optionsArray = data.options?.option || [];
+          
+          // Handle single option returned as object instead of array
+          const optionsChain = Array.isArray(optionsArray) ? optionsArray : (optionsArray ? [optionsArray] : []);
           
           if (optionsChain.length === 0) {
-            errors.push(`No options data found for ${symbol}`);
-            for (const leg of symbolGroups[symbol]) {
+            // No options for this expiration - might be expired or not trading
+            for (const leg of legsInGroup) {
               optionData[leg.legId] = {
                 symbol: leg.symbol,
                 strike: leg.strike,
                 expiration: leg.expiration,
                 type: leg.type,
-                error: 'No options chain data available',
+                error: 'No options data available for this expiration',
               };
             }
             continue;
           }
 
           // Match user's requested contracts from the chain
-          const legsForSymbol = symbolGroups[symbol];
-          
-          for (const leg of legsForSymbol) {
-            const normalizedExpiration = normalizeDate(leg.expiration);
+          for (const leg of legsInGroup) {
             const legType = leg.type.toLowerCase();
             
-            console.log(`[Greeks DEBUG] Looking for: exp=${normalizedExpiration}, type=${legType}, strike=${leg.strike}`);
-            
             // Find matching contract in chain
-            // Massive.com structure: details.strike_price, details.expiration_date, details.contract_type
+            // Tradier structure: strike, option_type ("call"/"put"), expiration_date
             const matchedContract = optionsChain.find((contract: any) => {
-              const details = contract.details || {};
-              const contractExpiration = details.expiration_date || '';
-              const contractType = (details.contract_type || '').toLowerCase();
-              const contractStrike = parseFloat(details.strike_price) || 0;
+              const contractType = (contract.option_type || '').toLowerCase();
+              const contractStrike = parseFloat(contract.strike) || 0;
               
               return (
-                contractExpiration === normalizedExpiration &&
                 contractType === legType &&
                 Math.abs(contractStrike - leg.strike) < 0.01 // Float comparison tolerance
               );
             });
-            
-            console.log(`[Greeks DEBUG] Match result for ${leg.legId}:`, matchedContract ? 'FOUND' : 'NOT FOUND');
 
             if (matchedContract) {
-              const details = matchedContract.details || {};
               const greeks = matchedContract.greeks || {};
-              const lastQuote = matchedContract.last_quote || {};
-              const lastTrade = matchedContract.last_trade || {};
-              const underlyingAsset = matchedContract.underlying_asset || {};
               
               optionData[leg.legId] = {
                 symbol: leg.symbol,
                 strike: leg.strike,
                 expiration: leg.expiration,
                 type: leg.type,
-                contractId: details.ticker || null,
-                // Prices from last_quote
-                bid: parseFloat(lastQuote.bid) || 0,
-                ask: parseFloat(lastQuote.ask) || 0,
-                last: parseFloat(lastTrade.price) || 0,
-                mark: lastQuote.midpoint ? parseFloat(lastQuote.midpoint) : 
-                      ((parseFloat(lastQuote.bid) || 0) + (parseFloat(lastQuote.ask) || 0)) / 2,
-                // Greeks from Massive.com
+                contractId: matchedContract.symbol || null,
+                // Prices
+                bid: parseFloat(matchedContract.bid) || 0,
+                ask: parseFloat(matchedContract.ask) || 0,
+                last: parseFloat(matchedContract.last) || 0,
+                mark: ((parseFloat(matchedContract.bid) || 0) + (parseFloat(matchedContract.ask) || 0)) / 2,
+                // Greeks from Tradier/ORATS
                 delta: greeks.delta !== undefined ? parseFloat(greeks.delta) : null,
                 gamma: greeks.gamma !== undefined ? parseFloat(greeks.gamma) : null,
                 theta: greeks.theta !== undefined ? parseFloat(greeks.theta) : null,
                 vega: greeks.vega !== undefined ? parseFloat(greeks.vega) : null,
-                rho: null, // Massive.com doesn't provide rho in snapshot
-                impliedVolatility: matchedContract.implied_volatility !== undefined 
-                  ? parseFloat(matchedContract.implied_volatility) : null,
+                rho: greeks.rho !== undefined ? parseFloat(greeks.rho) : null,
+                // Implied Volatility (Tradier provides mid_iv)
+                impliedVolatility: greeks.mid_iv !== undefined ? parseFloat(greeks.mid_iv) : null,
                 // Volume/Interest
-                volume: matchedContract.day?.volume || 0,
+                volume: parseInt(matchedContract.volume) || 0,
                 openInterest: parseInt(matchedContract.open_interest) || 0,
-                // Underlying price
-                underlyingPrice: parseFloat(underlyingAsset.price) || null,
-                // Additional Massive.com data
-                breakEvenPrice: matchedContract.break_even_price 
-                  ? parseFloat(matchedContract.break_even_price) : null,
+                // Underlying price (from root_symbol data if available)
+                underlyingPrice: null, // Tradier doesn't include this in chain response
               };
             } else {
-              // Contract not found in chain - might be expired or not trading
+              // Contract not found in chain
               optionData[leg.legId] = {
                 symbol: leg.symbol,
                 strike: leg.strike,
@@ -751,21 +715,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         } catch (err) {
-          errors.push(`Failed to fetch chain for ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          console.error(`[Greeks] Error fetching ${symbol}:`, err);
+          errors.push(`Failed to fetch ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          // Mark all legs in this group as failed
+          for (const leg of legsInGroup) {
+            optionData[leg.legId] = {
+              symbol: leg.symbol,
+              strike: leg.strike,
+              expiration: leg.expiration,
+              type: leg.type,
+              error: 'Failed to fetch options data',
+            };
+          }
         }
       }
 
-      // Track which symbols were skipped due to limit
-      if (uniqueSymbols.length > limitedSymbols.length) {
-        const skipped = uniqueSymbols.slice(5);
-        errors.push(`Skipped ${skipped.length} symbol(s) due to API limit: ${skipped.join(', ')}`);
+      // Track which groups were skipped due to limit
+      if (groupKeys.length > limitedGroups.length) {
+        const skipped = groupKeys.length - limitedGroups.length;
+        errors.push(`Skipped ${skipped} expiration(s) due to API limit`);
       }
 
       return res.json({
         success: true,
         optionData,
-        symbolsFetched: limitedSymbols.length,
-        totalSymbols: uniqueSymbols.length,
+        groupsFetched: limitedGroups.length,
+        totalGroups: groupKeys.length,
         errors: errors.length > 0 ? errors : undefined,
       });
     } catch (error) {

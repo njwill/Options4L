@@ -55,13 +55,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Market Data Integration
 
-**Provider:** Massive.com (formerly Polygon.io) - provides real-time options data with Greeks.
+**Provider:** Tradier - provides options data with Greeks from ORATS.
 **Endpoints Used:**
-- `/v3/snapshot/options/{underlyingAsset}` - Options chain snapshot with Greeks (delta, gamma, theta, vega), implied volatility, last quote, open interest.
-- `/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}` - Stock price snapshots for underlying asset prices.
-**Free Tier Limits:** 5 API calls per minute.
-**User Configuration:** Users add their Massive.com API key in Account Settings page. Key is stored per-user in the database.
-**Data Available:** Price data (bid, ask, last, midpoint), Greeks (delta, gamma, theta, vega), implied volatility, break-even price, open interest, underlying price.
+- `/v1/markets/options/chains?symbol=X&expiration=YYYY-MM-DD&greeks=true` - Options chain with Greeks (delta, gamma, theta, vega, rho), implied volatility, quotes, open interest.
+**Free Sandbox Tier:** 60 API calls per minute, 15-minute delayed data.
+**User Configuration:** Users add their Tradier sandbox API access token in Account Settings page. Key is stored per-user in the database.
+**Data Available:** Price data (bid, ask, last, mark), Greeks (delta, gamma, theta, vega, rho), implied volatility (mid_iv), volume, open interest.
+**Sign Up:** https://developer.tradier.com/user/sign_up (no brokerage account required)
 
 ### Database Configuration
 
