@@ -17,9 +17,19 @@ import {
   createComment,
   updateComment,
   deleteComment,
+  getPositionComments,
+  getPositionCommentCounts,
+  createPositionComment,
+  updatePositionComment,
+  deletePositionComment,
   computeTransactionHash,
 } from "./storage";
-import { insertCommentSchema, updateCommentSchema } from "@shared/schema";
+import { 
+  insertCommentSchema, 
+  updateCommentSchema,
+  insertPositionCommentSchema,
+  updatePositionCommentSchema,
+} from "@shared/schema";
 import "./types";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -588,6 +598,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to delete comment',
+      });
+    }
+  });
+
+  // ============================================================================
+  // Position Comments API
+  // ============================================================================
+
+  // Get position comments
+  app.get('/api/position-comments', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const positionHash = req.query.positionHash as string | undefined;
+      const comments = await getPositionComments(req.user.id, positionHash);
+
+      return res.json({
+        success: true,
+        comments,
+      });
+    } catch (error) {
+      console.error('Get position comments error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get position comments',
+      });
+    }
+  });
+
+  // Get position comment counts for multiple hashes
+  app.post('/api/position-comments/counts', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positionHashes } = req.body;
+      if (!Array.isArray(positionHashes)) {
+        return res.status(400).json({ success: false, message: 'positionHashes must be an array' });
+      }
+
+      const counts = await getPositionCommentCounts(req.user.id, positionHashes);
+
+      // Convert Map to object for JSON response
+      const countsObj: Record<string, number> = {};
+      counts.forEach((count, hash) => {
+        countsObj[hash] = count;
+      });
+
+      return res.json({
+        success: true,
+        counts: countsObj,
+      });
+    } catch (error) {
+      console.error('Get position comment counts error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get position comment counts',
+      });
+    }
+  });
+
+  // Create a new position comment
+  app.post('/api/position-comments', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = insertPositionCommentSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          success: false, 
+          message: validation.error.errors[0]?.message || 'Invalid request' 
+        });
+      }
+
+      const { positionHash, content } = validation.data;
+      const comment = await createPositionComment(req.user.id, positionHash, content);
+
+      return res.json({
+        success: true,
+        comment,
+      });
+    } catch (error) {
+      console.error('Create position comment error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create position comment',
+      });
+    }
+  });
+
+  // Update a position comment
+  app.put('/api/position-comments/:id', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = updatePositionCommentSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          success: false, 
+          message: validation.error.errors[0]?.message || 'Invalid request' 
+        });
+      }
+
+      const commentId = req.params.id;
+      const { content } = validation.data;
+      const comment = await updatePositionComment(req.user.id, commentId, content);
+
+      if (!comment) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Comment not found or you do not have permission to edit it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        comment,
+      });
+    } catch (error) {
+      console.error('Update position comment error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update position comment',
+      });
+    }
+  });
+
+  // Delete a position comment
+  app.delete('/api/position-comments/:id', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const commentId = req.params.id;
+      const success = await deletePositionComment(req.user.id, commentId);
+
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Comment not found or you do not have permission to delete it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Comment deleted successfully',
+      });
+    } catch (error) {
+      console.error('Delete position comment error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete position comment',
       });
     }
   });

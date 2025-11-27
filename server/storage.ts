@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, comments, type DbTransaction, type Comment } from '@shared/schema';
+import { dbTransactions, uploads, comments, positionComments, type DbTransaction, type Comment, type PositionComment } from '@shared/schema';
 import { eq, and, count, asc, desc, sql, max } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
@@ -362,6 +362,120 @@ export async function deleteComment(
   const result = await db
     .delete(comments)
     .where(and(eq(comments.id, commentId), eq(comments.userId, userId)))
+    .returning();
+  
+  return result.length > 0;
+}
+
+// ============================================================================
+// Position Comments
+// ============================================================================
+
+/**
+ * Get position comments for a user, optionally filtered by position hash
+ */
+export async function getPositionComments(
+  userId: string,
+  positionHash?: string
+): Promise<PositionComment[]> {
+  if (positionHash) {
+    return await db
+      .select()
+      .from(positionComments)
+      .where(and(
+        eq(positionComments.userId, userId),
+        eq(positionComments.positionHash, positionHash)
+      ))
+      .orderBy(desc(positionComments.createdAt));
+  }
+  
+  return await db
+    .select()
+    .from(positionComments)
+    .where(eq(positionComments.userId, userId))
+    .orderBy(desc(positionComments.createdAt));
+}
+
+/**
+ * Get position comment counts for multiple position hashes (for displaying badges)
+ */
+export async function getPositionCommentCounts(
+  userId: string,
+  positionHashes: string[]
+): Promise<Map<string, number>> {
+  if (positionHashes.length === 0) {
+    return new Map();
+  }
+  
+  const results = await db
+    .select({
+      positionHash: positionComments.positionHash,
+      count: count(),
+    })
+    .from(positionComments)
+    .where(and(
+      eq(positionComments.userId, userId),
+      sql`${positionComments.positionHash} = ANY(${positionHashes})`
+    ))
+    .groupBy(positionComments.positionHash);
+  
+  const countMap = new Map<string, number>();
+  for (const row of results) {
+    countMap.set(row.positionHash, Number(row.count));
+  }
+  return countMap;
+}
+
+/**
+ * Create a new position comment
+ */
+export async function createPositionComment(
+  userId: string,
+  positionHash: string,
+  content: string
+): Promise<PositionComment> {
+  const [comment] = await db
+    .insert(positionComments)
+    .values({
+      userId,
+      positionHash,
+      content,
+    })
+    .returning();
+  
+  return comment;
+}
+
+/**
+ * Update a position comment (only if owned by user)
+ */
+export async function updatePositionComment(
+  userId: string,
+  commentId: string,
+  content: string
+): Promise<PositionComment | null> {
+  const [updated] = await db
+    .update(positionComments)
+    .set({
+      content,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(positionComments.id, commentId), eq(positionComments.userId, userId)))
+    .returning();
+  
+  return updated || null;
+}
+
+/**
+ * Delete a position comment (only if owned by user)
+ */
+export async function deletePositionComment(
+  userId: string,
+  commentId: string
+): Promise<boolean> {
+  const result = await db
+    .delete(positionComments)
+    .where(and(eq(positionComments.id, commentId), eq(positionComments.userId, userId)))
     .returning();
   
   return result.length > 0;

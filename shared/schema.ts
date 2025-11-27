@@ -299,3 +299,29 @@ export const updateCommentSchema = z.object({
 
 export type InsertCommentInput = z.infer<typeof insertCommentSchema>;
 export type UpdateCommentInput = z.infer<typeof updateCommentSchema>;
+
+// Position Comments table - stores user comments on positions (linked by hash for persistence)
+export const positionComments = pgTable("position_comments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  positionHash: varchar("position_hash", { length: 128 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export type PositionComment = typeof positionComments.$inferSelect;
+export type InsertPositionComment = typeof positionComments.$inferInsert;
+
+// Zod schemas for position comment validation
+export const insertPositionCommentSchema = z.object({
+  positionHash: z.string().min(1),
+  content: z.string().min(1).max(2000),
+});
+
+export const updatePositionCommentSchema = z.object({
+  content: z.string().min(1).max(2000),
+});
+
+export type InsertPositionCommentInput = z.infer<typeof insertPositionCommentSchema>;
+export type UpdatePositionCommentInput = z.infer<typeof updatePositionCommentSchema>;

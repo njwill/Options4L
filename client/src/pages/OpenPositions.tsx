@@ -1,12 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
+import { PositionCommentsPanel } from '@/components/PositionCommentsPanel';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2 } from 'lucide-react';
+import { Link2, MessageSquare } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { computePositionHash } from '@/lib/positionHash';
 
 interface OpenPositionsProps {
   positions: Position[];
@@ -18,8 +22,39 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  
+  const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
+  const [selectedPositionHash, setSelectedPositionHash] = useState('');
+  const [selectedPositionDesc, setSelectedPositionDesc] = useState('');
+  const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
+  
+  const { user } = useAuth();
+  const isAuthenticated = !!user;
 
   const openPositions = positions.filter((p) => p.status === 'open');
+  
+  useEffect(() => {
+    async function computeHashes() {
+      const hashMap = new Map<string, string>();
+      for (const pos of openPositions) {
+        const hash = await computePositionHash(pos);
+        hashMap.set(pos.id, hash);
+      }
+      setPositionHashes(hashMap);
+    }
+    if (openPositions.length > 0) {
+      computeHashes();
+    }
+  }, [openPositions.length]);
+  
+  const handleOpenComments = (pos: Position) => {
+    const hash = positionHashes.get(pos.id);
+    if (hash) {
+      setSelectedPositionHash(hash);
+      setSelectedPositionDesc(`${pos.symbol} - ${pos.strategyType} (${pos.entryDate})`);
+      setCommentsPanelOpen(true);
+    }
+  };
 
   const symbols = useMemo(() => {
     return Array.from(new Set(openPositions.map((p) => p.symbol))).sort();
@@ -138,7 +173,27 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
       },
       className: 'text-right',
     },
-  ];
+    ...(isAuthenticated ? [{
+      key: 'notes',
+      header: 'Notes',
+      accessor: (row: Position) => (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenComments(row);
+          }}
+          data-testid={`button-notes-position-${row.id}`}
+        >
+          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+        </Button>
+      ),
+      sortValue: () => 0,
+      className: 'text-center w-[60px]',
+    }] : []),
+  ] as Column<Position>[];
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -169,6 +224,7 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
       {formatCurrency(totals.netPL)}
     </span>,
     '',
+    ...(isAuthenticated ? [''] : []),
   ];
 
   return (
@@ -210,6 +266,15 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
       />
+      
+      {isAuthenticated && (
+        <PositionCommentsPanel
+          isOpen={commentsPanelOpen}
+          onClose={() => setCommentsPanelOpen(false)}
+          positionHash={selectedPositionHash}
+          positionDescription={selectedPositionDesc}
+        />
+      )}
     </div>
   );
 }
