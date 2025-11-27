@@ -16,6 +16,7 @@ import { EmailVerify } from '@/pages/EmailVerify';
 import PrivacyPolicy from '@/pages/PrivacyPolicy';
 import TermsOfService from '@/pages/TermsOfService';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { LivePriceCacheProvider } from '@/hooks/use-price-cache';
 import { LoginModal } from '@/components/LoginModal';
 import { UserMenu } from '@/components/UserMenu';
 import { ImportSessionDialog } from '@/components/ImportSessionDialog';
@@ -508,13 +509,15 @@ function EmailVerifyRoute() {
 function App() {
   return (
     <AuthProvider>
-      <Switch>
-        <Route path="/auth/verify" component={EmailVerifyRoute} />
-        <Route path="/privacy" component={PrivacyPolicy} />
-        <Route path="/terms" component={TermsOfService} />
-        <Route path="/" component={AppContent} />
-        <Route component={AppContent} />
-      </Switch>
+      <LivePriceCacheProvider>
+        <Switch>
+          <Route path="/auth/verify" component={EmailVerifyRoute} />
+          <Route path="/privacy" component={PrivacyPolicy} />
+          <Route path="/terms" component={TermsOfService} />
+          <Route path="/" component={AppContent} />
+          <Route component={AppContent} />
+        </Switch>
+      </LivePriceCacheProvider>
     </AuthProvider>
   );
 }
