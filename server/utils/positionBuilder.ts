@@ -49,7 +49,17 @@ interface AnomalyRecord {
   reason: string;
 }
 
-export function buildPositions(transactions: Transaction[]): { positions: Position[], rolls: Roll[], rollChains: RollChain[] } {
+// Manual grouping structure (aggregated from database)
+export interface ManualGrouping {
+  groupId: string;
+  transactionHashes: string[];
+  strategyType: string;
+}
+
+export function buildPositions(
+  transactions: Transaction[], 
+  manualGroupings: ManualGrouping[] = []
+): { positions: Position[], rolls: Roll[], rollChains: RollChain[] } {
   const optionTxns = transactions.filter((t) => t.option.isOption && t.option.expiration && t.option.strike);
 
   const sortedTxns = [...optionTxns].sort((a, b) => {
@@ -71,11 +81,21 @@ export function buildPositions(transactions: Transaction[]): { positions: Positi
   // Create one position per leg initially
   const singleLegPositions = createSingleLegPositions(legLedgerMap);
 
-  // Merge multi-leg strategies
-  const mergedPositions = mergeMultiLegStrategies(singleLegPositions);
+  // Apply manual groupings before auto-merge
+  // This allows users to override auto-detection for specific transactions
+  const { 
+    manuallyGroupedPositions, 
+    remainingPositions 
+  } = applyManualGroupings(singleLegPositions, manualGroupings, transactions);
+
+  // Merge remaining positions using auto-detection (multi-leg strategies)
+  const autoMergedPositions = mergeMultiLegStrategies(remainingPositions);
+
+  // Combine manually grouped and auto-merged positions
+  const allPositionRecords = [...manuallyGroupedPositions, ...autoMergedPositions];
 
   // Convert to Position objects
-  const positions = mergedPositions.map((record) => convertToPosition(record));
+  const positions = allPositionRecords.map((record) => convertToPosition(record));
 
   // Detect rolls
   const rollMatches = detectRolls(transactions);
@@ -293,6 +313,156 @@ function createSingleLegPositions(legLedgerMap: Map<string, LegLedger>): Positio
   });
 
   return positions;
+}
+
+// Apply manual groupings to override auto-detection for specific transactions
+function applyManualGroupings(
+  positions: PositionRecord[],
+  manualGroupings: ManualGrouping[],
+  transactions: Transaction[]
+): { manuallyGroupedPositions: PositionRecord[]; remainingPositions: PositionRecord[] } {
+  if (manualGroupings.length === 0) {
+    return { manuallyGroupedPositions: [], remainingPositions: positions };
+  }
+
+  // Build transaction ID to hash mapping using import from storage
+  // We need to compute hashes dynamically since transactions may not have hash stored
+  const txnIdToHash = new Map<string, string>();
+  const { createHash } = require('crypto');
+  
+  transactions.forEach((txn) => {
+    const option = txn.option || {};
+    const key = [
+      txn.activityDate,
+      txn.instrument,
+      txn.transCode,
+      txn.description || '',
+      txn.quantity.toString(),
+      txn.price.toString(),
+      txn.amount.toString(),
+      option.symbol || '',
+      option.expiration || '',
+      option.strike?.toString() || '',
+      option.optionType || '',
+    ].join('|');
+    const hash = createHash('sha256').update(key).digest('hex');
+    txnIdToHash.set(txn.id, hash);
+  });
+
+  // Build hash to transaction ID mapping (reverse lookup)
+  const hashToTxnIds = new Map<string, string[]>();
+  txnIdToHash.forEach((hash, txnId) => {
+    const existing = hashToTxnIds.get(hash) || [];
+    existing.push(txnId);
+    hashToTxnIds.set(hash, existing);
+  });
+
+  // For each manual grouping, collect all transaction IDs
+  const manualGroupingTxnIds = new Set<string>();
+  const groupedPositionData: Array<{
+    groupId: string;
+    txnIds: string[];
+    strategyType: string;
+  }> = [];
+
+  manualGroupings.forEach((grouping) => {
+    const txnIds: string[] = [];
+    grouping.transactionHashes.forEach((hash) => {
+      const ids = hashToTxnIds.get(hash);
+      if (ids) {
+        ids.forEach((id) => {
+          txnIds.push(id);
+          manualGroupingTxnIds.add(id);
+        });
+      }
+    });
+    if (txnIds.length > 0) {
+      groupedPositionData.push({
+        groupId: grouping.groupId,
+        txnIds,
+        strategyType: grouping.strategyType,
+      });
+    }
+  });
+
+  // Partition positions: those that have ANY transactions in manual groupings vs those that don't
+  const positionsByTxnId = new Map<string, PositionRecord>();
+  positions.forEach((pos) => {
+    pos.transactionIds.forEach((txnId) => {
+      if (!positionsByTxnId.has(txnId)) {
+        positionsByTxnId.set(txnId, pos);
+      }
+    });
+  });
+
+  // Find positions that should be manually grouped
+  const positionsToMerge = new Set<PositionRecord>();
+  groupedPositionData.forEach(({ txnIds }) => {
+    txnIds.forEach((txnId) => {
+      const pos = positionsByTxnId.get(txnId);
+      if (pos) {
+        positionsToMerge.add(pos);
+      }
+    });
+  });
+
+  // Create manually grouped positions
+  const manuallyGroupedPositions: PositionRecord[] = [];
+  const processedPositionIds = new Set<string>();
+
+  groupedPositionData.forEach(({ groupId, txnIds, strategyType }) => {
+    // Find all positions that contain any of these transaction IDs
+    const matchingPositions: PositionRecord[] = [];
+    txnIds.forEach((txnId) => {
+      const pos = positionsByTxnId.get(txnId);
+      if (pos && !processedPositionIds.has(pos.id)) {
+        matchingPositions.push(pos);
+        processedPositionIds.add(pos.id);
+      }
+    });
+
+    if (matchingPositions.length === 0) return;
+
+    // Merge matching positions into one with the user-specified strategy
+    const allLegs = matchingPositions.flatMap((p) => p.legs);
+    const allCashFlows = matchingPositions.flatMap((p) => p.cashFlows);
+    const allTxnIds = matchingPositions.flatMap((p) => p.transactionIds);
+    
+    // Determine entry/exit dates and status
+    const entryDate = matchingPositions
+      .map((p) => p.entryDate)
+      .sort()[0];
+    
+    const isAllClosed = matchingPositions.every((p) => p.status === 'closed');
+    const exitDate = isAllClosed
+      ? matchingPositions
+          .map((p) => p.exitDate)
+          .filter((d): d is string => d !== null)
+          .sort()
+          .pop() || null
+      : null;
+
+    const mergedPosition: PositionRecord = {
+      id: groupId, // Use the groupId as the position ID for tracking
+      symbol: matchingPositions[0].symbol,
+      strategyType,
+      status: isAllClosed ? 'closed' : 'open',
+      entryDate,
+      exitDate,
+      legs: allLegs,
+      cashFlows: allCashFlows,
+      transactionIds: allTxnIds,
+    };
+
+    manuallyGroupedPositions.push(mergedPosition);
+  });
+
+  // Remaining positions are those not involved in any manual grouping
+  const remainingPositions = positions.filter(
+    (pos) => !processedPositionIds.has(pos.id)
+  );
+
+  return { manuallyGroupedPositions, remainingPositions };
 }
 
 // Merge positions that form multi-leg strategies

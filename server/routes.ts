@@ -25,6 +25,7 @@ import {
   computeTransactionHash,
   getManualGroupings,
   getManualGroupingsByGroupId,
+  getManualGroupingsForPositionBuilder,
   createManualGrouping,
   deleteManualGrouping,
 } from "./storage";
@@ -93,7 +94,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Step 3: Build positions and detect rolls (works on all transactions)
-      const { positions, rolls, rollChains } = buildPositions(transactions);
+      // For authenticated users, also load manual groupings to override auto-detection
+      const manualGroupings = req.user 
+        ? await getManualGroupingsForPositionBuilder(req.user.id)
+        : [];
+      const { positions, rolls, rollChains } = buildPositions(transactions, manualGroupings);
 
       // Step 4: Calculate summary statistics
       const summary = calculateSummary(positions);
@@ -179,8 +184,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Load ALL user transactions from database for analysis
       const allTransactions = await loadUserTransactions(req.user.id);
 
+      // Load manual groupings for position building
+      const manualGroupings = await getManualGroupingsForPositionBuilder(req.user.id);
+      
       // Build positions and detect rolls
-      const { positions, rolls, rollChains } = buildPositions(allTransactions);
+      const { positions, rolls, rollChains } = buildPositions(allTransactions, manualGroupings);
 
       // Calculate summary statistics
       const summary = calculateSummary(positions);
@@ -287,8 +295,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Load manual groupings for position building
+      const manualGroupings = await getManualGroupingsForPositionBuilder(req.user.id);
+      
       // Build positions and detect rolls
-      const { positions, rolls, rollChains } = buildPositions(transactions);
+      const { positions, rolls, rollChains } = buildPositions(transactions, manualGroupings);
 
       // Calculate summary statistics
       const summary = calculateSummary(positions);

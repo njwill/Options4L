@@ -524,6 +524,28 @@ export async function getManualGroupingsByGroupId(
 }
 
 /**
+ * Get manual groupings in the format expected by positionBuilder
+ * Returns an array of { groupId, transactionHashes, strategyType }
+ */
+export async function getManualGroupingsForPositionBuilder(
+  userId: string
+): Promise<Array<{ groupId: string; transactionHashes: string[]; strategyType: string }>> {
+  const groupingsMap = await getManualGroupingsByGroupId(userId);
+  
+  const result: Array<{ groupId: string; transactionHashes: string[]; strategyType: string }> = [];
+  
+  groupingsMap.forEach((value, groupId) => {
+    result.push({
+      groupId,
+      transactionHashes: value.transactionHashes,
+      strategyType: value.strategyType,
+    });
+  });
+  
+  return result;
+}
+
+/**
  * Create a manual position grouping (group multiple transactions together)
  * All transactions in the group share the same groupId
  */
