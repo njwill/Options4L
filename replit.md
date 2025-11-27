@@ -58,3 +58,9 @@ Preferred communication style: Simple, everyday language.
 **ORM:** Drizzle ORM with PostgreSQL dialect via `@neondatabase/serverless` driver.
 **Schema:** Defined in `shared/schema.ts`, supporting migrations.
 **Active Usage:** Stores authenticated user data across `users`, `uploads`, `transactions`, `comments`, `positionComments`, and `email_verification_tokens` tables. Features user-scoped data isolation, composite unique constraints for deduplication, and indexing for performance.
+
+## Legal Documentation
+
+**Privacy Policy:** Available at `/privacy`. Covers data collection practices (NOSTR pubkey, email, trading data), storage policies, security measures, no data selling commitment, user rights (access, export, deletion), and open-source transparency.
+
+**Terms of Service:** Available at `/terms`. Includes critical financial disclaimers (not financial advice, educational purposes only), service description, user responsibilities, limitation of liability, and MIT license reference.
