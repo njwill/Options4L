@@ -341,11 +341,12 @@ function AppContent() {
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 </Button>
-                <Button variant="ghost" asChild data-testid="link-main-site">
-                  <a href="https://www.options4l.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                    Main Site
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => setActiveTab('dashboard')}
+                  data-testid="button-home-nav"
+                >
+                  Home
                 </Button>
                 {positions.length > 0 && (
                   <label htmlFor="file-upload-header">
