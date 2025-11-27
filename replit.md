@@ -11,10 +11,10 @@ A comprehensive trading analysis application designed to process Robinhood tradi
 - Roll detection and chain linking across related positions
 - Real-time P/L calculations and performance metrics
 - Interactive dashboard with filtering and detailed position views
-- **Dual Authentication:** NOSTR (NIP-07 extensions) and Replit Auth (Email/Google/GitHub/Apple)
-- **Transaction deduplication** for authenticated users
-- **Session import** to save anonymous data after login
-- **Account management** with upload history and data export
+- **NEW:** NOSTR authentication for persistent data storage
+- **NEW:** Transaction deduplication for authenticated users
+- **NEW:** Session import to save anonymous data after login
+- **NEW:** Account management with upload history and data export
 
 ## User Preferences
 
@@ -74,7 +74,7 @@ Preferred communication style: Simple, everyday language.
 
 **Key Architectural Choices:**
 - Dual-mode storage: In-memory for anonymous users, PostgreSQL for authenticated users
-- Dual authentication: NOSTR (NIP-07 with JWT) and Replit Auth (OpenID Connect with session store)
+- NOSTR authentication (NIP-07) with JWT session management via httpOnly cookies
 - Transaction deduplication using hash-based uniqueness (user_id + transaction_hash)
 - Synchronous processing pipeline to ensure data consistency
 - Comprehensive error handling with transaction-level anomaly tracking
@@ -115,9 +115,7 @@ Preferred communication style: Simple, everyday language.
 - Privacy-focused - no data persisted to database
 
 **Authenticated Mode (Optional):**
-- Dual authentication options:
-  - **NOSTR** via NIP-07 browser extensions (nos2x, Alby, Flamingo)
-  - **Replit Auth** via OpenID Connect (Email, Google, GitHub, Apple)
+- NOSTR authentication via NIP-07 browser extensions (nos2x, Alby, Flamingo)
 - PostgreSQL storage using Drizzle ORM
 - Persistent data across sessions
 - Transaction deduplication using hash (activityDate, instrument, transCode, quantity, price, amount)
@@ -125,23 +123,13 @@ Preferred communication style: Simple, everyday language.
 - Session import feature to save anonymous data after login
 - Account management: display name editing, data export to CSV
 
-**Authentication Flows:**
-
-*NOSTR Authentication:*
+**Authentication Flow:**
 1. User clicks "Sign in with NOSTR"
 2. Backend generates challenge (nonce)
 3. Frontend creates NOSTR event (kind 27235) with challenge
 4. NIP-07 extension signs the event
 5. Backend verifies signature and issues JWT in httpOnly cookie
 6. User remains authenticated across sessions
-
-*Replit Auth (Email):*
-1. User clicks "Continue with Email" 
-2. Redirects to Replit OIDC provider (/api/login)
-3. User authenticates via email/password, Google, GitHub, or Apple
-4. Callback handles token exchange and session creation
-5. Session stored in PostgreSQL sessions table with connect-pg-simple
-6. User data fetched/created in users table (email, firstName, lastName, profileImageUrl)
 
 **Deduplication Strategy:**
 - Hash constructed from 6 transaction fields for uniqueness
@@ -185,16 +173,13 @@ Preferred communication style: Simple, everyday language.
 
 **Migration Setup:** Schema defined in `shared/schema.ts` with migration output to `./migrations` directory. Database connection via `DATABASE_URL` environment variable.
 
-**Active Usage:** Database is used for authenticated user data with four main tables:
-- `users` - User accounts supporting both NOSTR (nostrPubkey) and Replit Auth (replitUserId, email)
+**Active Usage:** Database is used for authenticated user data with three main tables:
+- `users` - NOSTR public keys, display names, creation timestamps
 - `uploads` - Upload metadata (filename, date, transaction counts)
 - `transactions` - Individual transaction records with deduplication hash
-- `sessions` - Express session store for Replit Auth (connect-pg-simple)
 
 **Schema Highlights:**
 - User-scoped data isolation via foreign keys
-- nostrPubkey nullable to support Replit-only users
-- Unique constraints on replitUserId and email for Replit Auth users
 - Composite unique constraint on (user_id + transaction_hash) for deduplication
 - Indexes on user_id and activityDate for query performance
 

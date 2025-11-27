@@ -211,40 +211,14 @@ export type UploadResponse = z.infer<typeof uploadResponseSchema>;
 // Database Tables (Drizzle ORM)
 // ============================================================================
 
-import { index, jsonb } from "drizzle-orm/pg-core";
-
-// Session storage table for Replit Auth
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)],
-);
-
-// Users table - supports both NOSTR and Replit Auth
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+// Users table - stores NOSTR public keys
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  // NOSTR authentication (optional)
-  nostrPubkey: varchar("nostr_pubkey", { length: 64 }).unique(),
-  // Replit Auth fields (optional)
-  replitUserId: varchar("replit_user_id", { length: 50 }).unique(),
-  email: varchar("email", { length: 255 }).unique(),
-  firstName: varchar("first_name", { length: 100 }),
-  lastName: varchar("last_name", { length: 100 }),
-  profileImageUrl: varchar("profile_image_url", { length: 500 }),
-  // Shared fields
+  nostrPubkey: varchar("nostr_pubkey", { length: 64 }).notNull().unique(),
   displayName: varchar("display_name", { length: 100 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
 });
-
-export type UpsertUser = typeof users.$inferInsert;
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

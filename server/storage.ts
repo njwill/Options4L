@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, users, type DbTransaction, type User, type UpsertUser } from '@shared/schema';
+import { dbTransactions, uploads, type DbTransaction } from '@shared/schema';
 import { eq, and, count, asc, sql, max } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
@@ -254,63 +254,4 @@ export async function getUserProfile(userId: string) {
     transactionCount: Number(transactionCountResult.count),
     uploadCount: Number(uploadCountResult.count),
   };
-}
-
-// ============================================================================
-// Replit Auth Storage Functions
-// ============================================================================
-
-/**
- * Upsert a user from Replit Auth
- * Creates or updates a user based on their Replit user ID
- */
-export async function upsertReplitUser(userData: {
-  replitUserId: string;
-  email?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  profileImageUrl?: string | null;
-}): Promise<User> {
-  const displayName = userData.firstName && userData.lastName 
-    ? `${userData.firstName} ${userData.lastName}`.trim()
-    : userData.firstName || userData.email?.split('@')[0] || 'User';
-
-  const [user] = await db
-    .insert(users)
-    .values({
-      replitUserId: userData.replitUserId,
-      email: userData.email,
-      firstName: userData.firstName,
-      lastName: userData.lastName,
-      profileImageUrl: userData.profileImageUrl,
-      displayName,
-      lastLoginAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: users.replitUserId,
-      set: {
-        email: userData.email,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        profileImageUrl: userData.profileImageUrl,
-        displayName,
-        updatedAt: new Date(),
-        lastLoginAt: new Date(),
-      },
-    })
-    .returning();
-  
-  return user;
-}
-
-/**
- * Get a user by their Replit user ID
- */
-export async function getReplitUser(replitUserId: string): Promise<User | undefined> {
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.replitUserId, replitUserId));
-  
-  return user;
 }
