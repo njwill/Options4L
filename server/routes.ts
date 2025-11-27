@@ -566,6 +566,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const url = `https://www.alphavantage.co/query?function=HISTORICAL_OPTIONS&symbol=${encodeURIComponent(symbol)}&require_greeks=true&apikey=${apiKey}`;
           const response = await fetch(url);
           const data = await response.json();
+          
+          // Log the raw response for debugging
+          console.log(`[Greeks] ${symbol} raw response keys:`, Object.keys(data));
+          if (data['Error Message']) {
+            console.log(`[Greeks] ${symbol} error:`, data['Error Message']);
+          }
+          if (data['Meta Data']) {
+            console.log(`[Greeks] ${symbol} meta:`, data['Meta Data']);
+          }
 
           if (data['Note']) {
             errors.push(`Rate limit reached: ${data['Note']}`);
