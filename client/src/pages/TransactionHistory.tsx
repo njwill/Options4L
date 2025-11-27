@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import { CommentsPanel } from '@/components/CommentsPanel';
 import { GroupPositionModal } from '@/components/GroupPositionModal';
 import { useAuth } from '@/hooks/use-auth';
 import { computeTransactionHash } from '@/lib/transactionHash';
+import { apiRequest } from '@/lib/queryClient';
 import type { Transaction, StrategyType } from '@shared/schema';
 import { format } from 'date-fns';
 
@@ -47,6 +49,37 @@ export default function TransactionHistory({ transactions, onGroupCreated }: Tra
       computeHashes();
     }
   }, [transactions]);
+  
+  // Fetch comment counts for all transaction hashes
+  const allHashes = useMemo(() => Array.from(transactionHashes.values()), [transactionHashes]);
+  
+  const { data: commentCountsData } = useQuery<{ success: boolean; counts: Record<string, number> }>({
+    queryKey: ['/api/comments/counts', allHashes],
+    queryFn: async () => {
+      if (allHashes.length === 0) return { success: true, counts: {} };
+      const res = await apiRequest('POST', '/api/comments/counts', { transactionHashes: allHashes });
+      return res.json();
+    },
+    enabled: isAuthenticated && allHashes.length > 0,
+    staleTime: 30000, // Cache for 30 seconds
+  });
+  
+  const commentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (commentCountsData?.counts) {
+      Object.entries(commentCountsData.counts).forEach(([hash, count]) => {
+        counts.set(hash, count);
+      });
+    }
+    return counts;
+  }, [commentCountsData]);
+  
+  // Get count for a specific transaction by looking up its hash
+  const getCommentCount = (txnId: string): number => {
+    const hash = transactionHashes.get(txnId);
+    if (!hash) return 0;
+    return commentCounts.get(hash) || 0;
+  };
   
   const handleOpenComments = (txn: Transaction) => {
     const hash = transactionHashes.get(txn.id);
@@ -245,20 +278,28 @@ export default function TransactionHistory({ transactions, onGroupCreated }: Tra
     ...(isAuthenticated ? [{
       key: 'notes',
       header: 'Notes',
-      accessor: (row: Transaction) => (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenComments(row);
-          }}
-          data-testid={`button-notes-${row.id}`}
-        >
-          <MessageSquare className="h-4 w-4 text-muted-foreground" />
-        </Button>
-      ),
+      accessor: (row: Transaction) => {
+        const count = getCommentCount(row.id);
+        return (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 relative"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenComments(row);
+            }}
+            data-testid={`button-notes-${row.id}`}
+          >
+            <MessageSquare className={`h-4 w-4 ${count > 0 ? 'text-primary' : 'text-muted-foreground'}`} />
+            {count > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                {count > 9 ? '9+' : count}
+              </span>
+            )}
+          </Button>
+        );
+      },
       sortValue: () => 0,
       className: 'text-center w-[60px]',
     }] : []),
