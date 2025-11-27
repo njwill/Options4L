@@ -541,54 +541,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ success: false, message: 'Option legs array required' });
       }
 
-      // Helper to parse date string to Unix timestamp (seconds)
-      // Handles: MM/DD/YYYY, YYYY-MM-DD, ISO 8601 (2024-07-19T00:00:00.000Z)
-      const dateToTimestamp = (dateStr: string): number => {
-        if (!dateStr) return 0;
+      // Helper to extract date components from a date string
+      // Handles: MM/DD/YYYY, MM/DD/YY, YYYY-MM-DD, ISO 8601
+      const parseDateComponents = (dateStr: string): { year: number; month: number; day: number } | null => {
+        if (!dateStr || typeof dateStr !== 'string') return null;
         
         let year: number, month: number, day: number;
         
-        // Handle MM/DD/YYYY format
         if (dateStr.includes('/')) {
+          // MM/DD/YYYY or MM/DD/YY format
           const parts = dateStr.split('/');
-          if (parts.length === 3) {
-            month = parseInt(parts[0]);
-            day = parseInt(parts[1]);
-            year = parseInt(parts[2]);
-          } else {
-            return 0;
+          if (parts.length !== 3) return null;
+          
+          month = parseInt(parts[0], 10);
+          day = parseInt(parts[1], 10);
+          year = parseInt(parts[2], 10);
+          
+          // Validate parsed values
+          if (isNaN(month) || isNaN(day) || isNaN(year)) return null;
+          
+          // Handle 2-digit years (Robinhood uses MM/DD/YY)
+          // Valid range: 00-99 maps to 2000-2099
+          if (year >= 0 && year < 100) {
+            year += 2000;
           }
+          
+          // Validate year is reasonable (2000-2099)
+          if (year < 2000 || year > 2099) return null;
         } else if (dateStr.includes('T')) {
           // ISO 8601 format: 2024-07-19T00:00:00.000Z
           const datePart = dateStr.split('T')[0];
           const parts = datePart.split('-');
-          if (parts.length === 3) {
-            year = parseInt(parts[0]);
-            month = parseInt(parts[1]);
-            day = parseInt(parts[2]);
-          } else {
-            return 0;
-          }
+          if (parts.length !== 3) return null;
+          
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10);
+          day = parseInt(parts[2], 10);
+          
+          if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
         } else if (dateStr.includes('-')) {
           // YYYY-MM-DD format
           const parts = dateStr.split('-');
-          if (parts.length === 3) {
-            year = parseInt(parts[0]);
-            month = parseInt(parts[1]);
-            day = parseInt(parts[2]);
-          } else {
-            return 0;
-          }
+          if (parts.length !== 3) return null;
+          
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10);
+          day = parseInt(parts[2], 10);
+          
+          if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
         } else {
-          return 0;
+          return null;
         }
         
-        // Yahoo expirationDates are Unix timestamps at 21:00 UTC (4pm ET during EST)
-        const date = new Date(Date.UTC(year, month - 1, day, 21, 0, 0));
-        return Math.floor(date.getTime() / 1000);
+        // Final validation: check month and day ranges
+        if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+        
+        return { year, month, day };
       };
 
-      // Group legs by symbol (Yahoo returns all expirations for a symbol, we filter after)
+      // Helper to find matching Yahoo expiration timestamp by date
+      const findMatchingExpiration = (
+        targetDate: { year: number; month: number; day: number },
+        yahooExpirations: number[]
+      ): number | null => {
+        if (yahooExpirations.length === 0) return null;
+        
+        // Find expiration on the same calendar day (Yahoo uses ~4pm ET = 20-21:00 UTC)
+        // We compare by UTC date components to match regardless of exact hour
+        for (const exp of yahooExpirations) {
+          const expDate = new Date(exp * 1000);
+          if (expDate.getUTCFullYear() === targetDate.year &&
+              expDate.getUTCMonth() === targetDate.month - 1 &&
+              expDate.getUTCDate() === targetDate.day) {
+            return exp;
+          }
+        }
+        
+        return null;
+      };
+
+      // Group legs by symbol
       const symbolGroups: Record<string, OptionLegRequest[]> = {};
       for (const leg of legs) {
         if (!symbolGroups[leg.symbol]) {
@@ -598,30 +630,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const symbols = Object.keys(symbolGroups);
-      
-      // Limit API calls to prevent rate limiting
       const limitedSymbols = symbols.slice(0, 15);
-      const optionData: Record<string, any> = {}; // keyed by legId
+      const optionData: Record<string, any> = {};
       const errors: string[] = [];
 
       console.log(`[Yahoo] Fetching options for ${limitedSymbols.length} symbols`);
 
-      // Fetch options chain for each symbol
+      // Process each symbol
       for (const symbol of limitedSymbols) {
         const legsForSymbol = symbolGroups[symbol];
         
-        // Get unique expirations for this symbol
-        const expirationTimestamps = new Set<number>();
-        for (const leg of legsForSymbol) {
-          expirationTimestamps.add(dateToTimestamp(leg.expiration));
-        }
-        const uniqueExpirations = Array.from(expirationTimestamps);
-        
         try {
-          // Yahoo Finance API - fetch each expiration date separately
-          for (const expTimestamp of uniqueExpirations) {
-            const url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}?date=${expTimestamp}`;
-            console.log(`[Yahoo] Fetching: ${symbol} exp ${new Date(expTimestamp * 1000).toISOString().split('T')[0]}`);
+          // Step 1: Fetch available expirations for this symbol (no date param)
+          const baseUrl = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}`;
+          console.log(`[Yahoo] Fetching available expirations for ${symbol}`);
+          
+          const baseResponse = await fetch(baseUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (compatible; OptionsAnalyzer/1.0)',
+            },
+          });
+          
+          if (baseResponse.status === 429) {
+            errors.push(`Rate limit reached for ${symbol}. Try again in a minute.`);
+            for (const leg of legsForSymbol) {
+              optionData[leg.legId] = { ...leg, error: 'Rate limited' };
+            }
+            continue;
+          }
+
+          if (!baseResponse.ok) {
+            console.error(`[Yahoo] HTTP ${baseResponse.status} for ${symbol}`);
+            for (const leg of legsForSymbol) {
+              optionData[leg.legId] = { ...leg, error: `HTTP ${baseResponse.status}` };
+            }
+            continue;
+          }
+          
+          const baseData = await baseResponse.json();
+          const baseResult = baseData.optionChain?.result?.[0];
+          const yahooExpirations: number[] = baseResult?.expirationDates || [];
+          const underlyingPrice = baseResult?.quote?.regularMarketPrice || null;
+          
+          console.log(`[Yahoo] ${symbol} has ${yahooExpirations.length} available expirations`);
+          
+          // Step 2: Group legs by their target expiration and find matching Yahoo timestamps
+          const expirationToLegs: Record<number, OptionLegRequest[]> = {};
+          
+          for (const leg of legsForSymbol) {
+            const dateComponents = parseDateComponents(leg.expiration);
+            if (!dateComponents) {
+              optionData[leg.legId] = { ...leg, error: 'Invalid expiration date format' };
+              continue;
+            }
+            
+            const matchedExpiration = findMatchingExpiration(dateComponents, yahooExpirations);
+            if (!matchedExpiration) {
+              optionData[leg.legId] = { ...leg, error: 'Expiration not available - may be expired or delisted' };
+              continue;
+            }
+            
+            if (!expirationToLegs[matchedExpiration]) {
+              expirationToLegs[matchedExpiration] = [];
+            }
+            expirationToLegs[matchedExpiration].push(leg);
+          }
+          
+          // Step 3: Fetch options chain for each unique expiration
+          for (const [expTimestamp, legsForExp] of Object.entries(expirationToLegs)) {
+            const expNum = parseInt(expTimestamp);
+            const url = `${baseUrl}?date=${expNum}`;
+            console.log(`[Yahoo] Fetching ${symbol} exp ${new Date(expNum * 1000).toISOString().split('T')[0]}`);
             
             const response = await fetch(url, {
               method: 'GET',
@@ -631,66 +712,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
               },
             });
             
-            if (response.status === 429) {
-              errors.push(`Rate limit reached for ${symbol}. Try again in a minute.`);
-              continue;
-            }
-
             if (!response.ok) {
-              console.error(`[Yahoo] HTTP ${response.status} for ${symbol}`);
+              for (const leg of legsForExp) {
+                optionData[leg.legId] = { ...leg, error: `HTTP ${response.status}` };
+              }
               continue;
             }
             
             const data = await response.json();
-            
-            // Yahoo structure: { optionChain: { result: [{ options: [{ calls: [...], puts: [...] }] }] } }
             const result = data.optionChain?.result?.[0];
-            if (!result || !result.options || result.options.length === 0) {
+            const optionsData = result?.options?.[0];
+            
+            if (!optionsData) {
+              for (const leg of legsForExp) {
+                optionData[leg.legId] = { ...leg, error: 'No options data returned' };
+              }
               continue;
             }
 
-            const optionsData = result.options[0];
             const calls = optionsData.calls || [];
             const puts = optionsData.puts || [];
-            const underlyingPrice = result.quote?.regularMarketPrice || null;
 
-            // Match legs for this expiration
-            const legsForExpiration = legsForSymbol.filter(
-              leg => dateToTimestamp(leg.expiration) === expTimestamp
-            );
-
-            for (const leg of legsForExpiration) {
+            // Match each leg by strike and type
+            for (const leg of legsForExp) {
               const legType = leg.type.toLowerCase();
               const contractList = legType === 'call' ? calls : puts;
               
-              // Find matching contract by strike
               const matchedContract = contractList.find((contract: any) => {
                 const contractStrike = parseFloat(contract.strike) || 0;
                 return Math.abs(contractStrike - leg.strike) < 0.01;
               });
 
               if (matchedContract) {
+                const bid = parseFloat(matchedContract.bid) || 0;
+                const ask = parseFloat(matchedContract.ask) || 0;
+                const last = parseFloat(matchedContract.lastPrice) || 0;
+                
+                // Calculate mark price with fallbacks
+                let mark = 0;
+                if (bid > 0 && ask > 0) {
+                  mark = (bid + ask) / 2;
+                } else if (last > 0) {
+                  mark = last;
+                } else if (ask > 0) {
+                  mark = ask;
+                } else if (bid > 0) {
+                  mark = bid;
+                }
+                
                 optionData[leg.legId] = {
                   symbol: leg.symbol,
                   strike: leg.strike,
                   expiration: leg.expiration,
                   type: leg.type,
                   contractId: matchedContract.contractSymbol || null,
-                  // Prices
-                  bid: parseFloat(matchedContract.bid) || 0,
-                  ask: parseFloat(matchedContract.ask) || 0,
-                  last: parseFloat(matchedContract.lastPrice) || 0,
-                  mark: ((parseFloat(matchedContract.bid) || 0) + (parseFloat(matchedContract.ask) || 0)) / 2,
-                  // Volume/Interest
+                  bid,
+                  ask,
+                  last,
+                  mark,
                   volume: parseInt(matchedContract.volume) || 0,
                   openInterest: parseInt(matchedContract.openInterest) || 0,
-                  // Underlying price
                   underlyingPrice: underlyingPrice,
-                  // Yahoo provides implied volatility
                   impliedVolatility: matchedContract.impliedVolatility 
                     ? parseFloat(matchedContract.impliedVolatility) 
                     : null,
-                  // Yahoo doesn't provide Greeks in free API
                   delta: null,
                   gamma: null,
                   theta: null,
@@ -703,7 +788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   strike: leg.strike,
                   expiration: leg.expiration,
                   type: leg.type,
-                  error: 'Contract not found - may be expired or delisted',
+                  error: 'Contract not found at this strike',
                 };
               }
             }
@@ -711,16 +796,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (err) {
           console.error(`[Yahoo] Error fetching ${symbol}:`, err);
           errors.push(`Failed to fetch ${symbol}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-          // Mark all legs for this symbol as failed
           for (const leg of legsForSymbol) {
             if (!optionData[leg.legId]) {
-              optionData[leg.legId] = {
-                symbol: leg.symbol,
-                strike: leg.strike,
-                expiration: leg.expiration,
-                type: leg.type,
-                error: 'Failed to fetch options data',
-              };
+              optionData[leg.legId] = { ...leg, error: 'Failed to fetch options data' };
             }
           }
         }
