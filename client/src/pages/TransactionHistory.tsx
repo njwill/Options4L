@@ -3,18 +3,21 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { MessageSquare } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { MessageSquare, Layers, X } from 'lucide-react';
 import { CommentsPanel } from '@/components/CommentsPanel';
+import { GroupPositionModal } from '@/components/GroupPositionModal';
 import { useAuth } from '@/hooks/use-auth';
 import { computeTransactionHash } from '@/lib/transactionHash';
-import type { Transaction } from '@shared/schema';
+import type { Transaction, StrategyType } from '@shared/schema';
 import { format } from 'date-fns';
 
 interface TransactionHistoryProps {
   transactions: Transaction[];
+  onGroupCreated?: () => void; // Callback when a group is created to refresh data
 }
 
-export default function TransactionHistory({ transactions }: TransactionHistoryProps) {
+export default function TransactionHistory({ transactions, onGroupCreated }: TransactionHistoryProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
@@ -23,6 +26,10 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
   const [selectedTxnHash, setSelectedTxnHash] = useState('');
   const [selectedTxnDesc, setSelectedTxnDesc] = useState('');
   const [transactionHashes, setTransactionHashes] = useState<Map<string, string>>(new Map());
+  
+  // Multi-select state for grouping transactions
+  const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
   
   const { user } = useAuth();
   const isAuthenticated = !!user;
@@ -48,6 +55,46 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
       setSelectedTxnDesc(`${txn.transCode} ${txn.description} - ${txn.activityDate}`);
       setCommentsPanelOpen(true);
     }
+  };
+  
+  // Multi-select handlers
+  const handleSelectTransaction = (txnId: string, checked: boolean) => {
+    setSelectedTransactions(prev => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(txnId);
+      } else {
+        next.delete(txnId);
+      }
+      return next;
+    });
+  };
+  
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedTransactions(new Set(filteredTransactions.map(t => t.id)));
+    } else {
+      setSelectedTransactions(new Set());
+    }
+  };
+  
+  const clearSelection = () => {
+    setSelectedTransactions(new Set());
+  };
+  
+  const getSelectedTransactionHashes = (): string[] => {
+    const hashes: string[] = [];
+    Array.from(selectedTransactions).forEach(txnId => {
+      const hash = transactionHashes.get(txnId);
+      if (hash) hashes.push(hash);
+    });
+    return hashes;
+  };
+  
+  const handleGroupCreated = () => {
+    clearSelection();
+    setGroupModalOpen(false);
+    onGroupCreated?.();
   };
 
   const symbols = useMemo(() => {
@@ -97,7 +144,33 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
     return 'text-muted-foreground';
   };
 
+  const allSelected = filteredTransactions.length > 0 && 
+    filteredTransactions.every(t => selectedTransactions.has(t.id));
+  const someSelected = selectedTransactions.size > 0 && !allSelected;
+
   const columns: Column<Transaction>[] = [
+    // Checkbox column for authenticated users (for grouping transactions)
+    ...(isAuthenticated ? [{
+      key: 'select',
+      header: (
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={handleSelectAll}
+          data-testid="checkbox-select-all"
+          className={someSelected ? "data-[state=checked]:bg-primary" : ""}
+        />
+      ),
+      accessor: (row: Transaction) => (
+        <Checkbox
+          checked={selectedTransactions.has(row.id)}
+          onCheckedChange={(checked) => handleSelectTransaction(row.id, !!checked)}
+          onClick={(e) => e.stopPropagation()}
+          data-testid={`checkbox-select-${row.id}`}
+        />
+      ),
+      sortValue: () => 0,
+      className: 'w-[40px]',
+    }] : []),
     {
       key: 'date',
       header: 'Date',
@@ -229,12 +302,50 @@ export default function TransactionHistory({ transactions }: TransactionHistoryP
         pageSize={100}
       />
       
+      {/* Floating action bar when transactions are selected */}
+      {isAuthenticated && selectedTransactions.size >= 2 && (
+        <div 
+          className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-card border shadow-lg rounded-lg px-4 py-3 flex items-center gap-4"
+          data-testid="floating-action-bar"
+        >
+          <span className="text-sm text-muted-foreground">
+            {selectedTransactions.size} transactions selected
+          </span>
+          <Button
+            size="sm"
+            onClick={() => setGroupModalOpen(true)}
+            data-testid="button-group-as-position"
+          >
+            <Layers className="w-4 h-4 mr-2" />
+            Group as Position
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={clearSelection}
+            data-testid="button-clear-selection"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+      
       {isAuthenticated && (
         <CommentsPanel
           isOpen={commentsPanelOpen}
           onClose={() => setCommentsPanelOpen(false)}
           transactionHash={selectedTxnHash}
           transactionDescription={selectedTxnDesc}
+        />
+      )}
+      
+      {isAuthenticated && (
+        <GroupPositionModal
+          isOpen={groupModalOpen}
+          onClose={() => setGroupModalOpen(false)}
+          transactionHashes={getSelectedTransactionHashes()}
+          selectedTransactions={transactions.filter(t => selectedTransactions.has(t.id))}
+          onGroupCreated={handleGroupCreated}
         />
       )}
     </div>
