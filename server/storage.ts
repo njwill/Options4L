@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, comments, positionComments, type DbTransaction, type Comment, type PositionComment } from '@shared/schema';
+import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping } from '@shared/schema';
 import { eq, and, count, asc, desc, sql, max } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
@@ -479,4 +479,129 @@ export async function deletePositionComment(
     .returning();
   
   return result.length > 0;
+}
+
+// ============================================================================
+// Manual Position Groupings
+// ============================================================================
+
+/**
+ * Get all manual position groupings for a user
+ * Returns groupings organized by groupId for easy access
+ */
+export async function getManualGroupings(userId: string): Promise<ManualPositionGrouping[]> {
+  return await db
+    .select()
+    .from(manualPositionGroupings)
+    .where(eq(manualPositionGroupings.userId, userId))
+    .orderBy(desc(manualPositionGroupings.createdAt));
+}
+
+/**
+ * Get manual groupings organized by groupId
+ * Returns a Map where key is groupId and value is array of transaction hashes
+ */
+export async function getManualGroupingsByGroupId(
+  userId: string
+): Promise<Map<string, { transactionHashes: string[]; strategyType: string }>> {
+  const groupings = await getManualGroupings(userId);
+  
+  const result = new Map<string, { transactionHashes: string[]; strategyType: string }>();
+  
+  for (const g of groupings) {
+    const existing = result.get(g.groupId);
+    if (existing) {
+      existing.transactionHashes.push(g.transactionHash);
+    } else {
+      result.set(g.groupId, {
+        transactionHashes: [g.transactionHash],
+        strategyType: g.strategyType,
+      });
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Create a manual position grouping (group multiple transactions together)
+ * All transactions in the group share the same groupId
+ */
+export async function createManualGrouping(
+  userId: string,
+  transactionHashes: string[],
+  strategyType: string
+): Promise<string> {
+  // Generate a new groupId for this grouping
+  const groupId = createHash('sha256')
+    .update(`${userId}-${Date.now()}-${Math.random()}`)
+    .digest('hex')
+    .slice(0, 64);
+  
+  // First, remove any existing groupings for these transaction hashes
+  // (a transaction can only be in one group at a time)
+  for (const hash of transactionHashes) {
+    await db
+      .delete(manualPositionGroupings)
+      .where(and(
+        eq(manualPositionGroupings.userId, userId),
+        eq(manualPositionGroupings.transactionHash, hash)
+      ));
+  }
+  
+  // Insert new groupings
+  for (const transactionHash of transactionHashes) {
+    await db.insert(manualPositionGroupings).values({
+      userId,
+      groupId,
+      transactionHash,
+      strategyType,
+    });
+  }
+  
+  return groupId;
+}
+
+/**
+ * Delete a manual grouping by groupId (removes all transactions from the group)
+ */
+export async function deleteManualGrouping(
+  userId: string,
+  groupId: string
+): Promise<boolean> {
+  const result = await db
+    .delete(manualPositionGroupings)
+    .where(and(
+      eq(manualPositionGroupings.userId, userId),
+      eq(manualPositionGroupings.groupId, groupId)
+    ))
+    .returning();
+  
+  return result.length > 0;
+}
+
+/**
+ * Check if a transaction is part of a manual grouping
+ */
+export async function isTransactionGrouped(
+  userId: string,
+  transactionHash: string
+): Promise<{ grouped: boolean; groupId: string | null; strategyType: string | null }> {
+  const [result] = await db
+    .select()
+    .from(manualPositionGroupings)
+    .where(and(
+      eq(manualPositionGroupings.userId, userId),
+      eq(manualPositionGroupings.transactionHash, transactionHash)
+    ));
+  
+  if (result) {
+    return {
+      grouped: true,
+      groupId: result.groupId,
+      strategyType: result.strategyType,
+    };
+  }
+  
+  return { grouped: false, groupId: null, strategyType: null };
 }

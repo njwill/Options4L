@@ -23,12 +23,18 @@ import {
   updatePositionComment,
   deletePositionComment,
   computeTransactionHash,
+  getManualGroupings,
+  getManualGroupingsByGroupId,
+  createManualGrouping,
+  deleteManualGrouping,
 } from "./storage";
 import { 
   insertCommentSchema, 
   updateCommentSchema,
   insertPositionCommentSchema,
   updatePositionCommentSchema,
+  createManualGroupingSchema,
+  deleteManualGroupingSchema,
 } from "@shared/schema";
 import "./types";
 
@@ -758,6 +764,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to delete position comment',
+      });
+    }
+  });
+
+  // ============================================================================
+  // Manual Position Groupings API
+  // ============================================================================
+
+  // Get all manual groupings for the user
+  app.get('/api/manual-groupings', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const groupings = await getManualGroupings(req.user.id);
+      
+      // Organize by groupId for frontend consumption
+      const groupMap: Record<string, { transactionHashes: string[]; strategyType: string; createdAt: Date }> = {};
+      
+      for (const g of groupings) {
+        if (!groupMap[g.groupId]) {
+          groupMap[g.groupId] = {
+            transactionHashes: [],
+            strategyType: g.strategyType,
+            createdAt: g.createdAt,
+          };
+        }
+        groupMap[g.groupId].transactionHashes.push(g.transactionHash);
+      }
+
+      return res.json({
+        success: true,
+        groupings: groupMap,
+      });
+    } catch (error) {
+      console.error('Get manual groupings error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get manual groupings',
+      });
+    }
+  });
+
+  // Create a new manual grouping
+  app.post('/api/manual-groupings', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = createManualGroupingSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          success: false, 
+          message: validation.error.errors[0]?.message || 'Invalid request' 
+        });
+      }
+
+      const { transactionHashes, strategyType } = validation.data;
+      const groupId = await createManualGrouping(req.user.id, transactionHashes, strategyType);
+
+      return res.json({
+        success: true,
+        groupId,
+        message: `Grouped ${transactionHashes.length} transactions as ${strategyType}`,
+      });
+    } catch (error) {
+      console.error('Create manual grouping error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create manual grouping',
+      });
+    }
+  });
+
+  // Delete a manual grouping
+  app.delete('/api/manual-groupings/:groupId', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { groupId } = req.params;
+      const success = await deleteManualGrouping(req.user.id, groupId);
+
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Grouping not found or you do not have permission to delete it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Grouping removed successfully',
+      });
+    } catch (error) {
+      console.error('Delete manual grouping error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete manual grouping',
       });
     }
   });
