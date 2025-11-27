@@ -228,6 +228,8 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
           allErrors.push(...chainData.errors);
           if (chainData.errors.some((e: string) => e.includes('Rate limit'))) {
             setQuotesError('API rate limit reached. Try again in a minute.');
+          } else if (chainData.errors.some((e: string) => e.toLowerCase().includes('premium'))) {
+            setQuotesError('Alpha Vantage options data requires a premium subscription. Visit alphavantage.co/premium for details.');
           }
         }
         
@@ -272,12 +274,24 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       
       const symbolCount = uniqueSymbols.length;
       const legCount = legRequests.length;
-      toast({
-        title: 'Market data updated',
-        description: legCount > 0 
-          ? `Fetched Greeks for ${legCount} option leg(s) across ${symbolCount} symbol(s)`
-          : `Fetched prices for ${symbolCount} symbol(s)`,
-      });
+      
+      // Check if all data shows premium required
+      const hasPremiumError = allErrors.some((e: string) => e.toLowerCase().includes('premium'));
+      
+      if (hasPremiumError) {
+        toast({
+          title: 'Premium Subscription Required',
+          description: 'Alpha Vantage options data requires a premium API key. Greeks are not available with free tier.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Market data updated',
+          description: legCount > 0 
+            ? `Fetched Greeks for ${legCount} option leg(s) across ${symbolCount} symbol(s)`
+            : `Fetched prices for ${symbolCount} symbol(s)`,
+        });
+      }
     } catch (error) {
       console.error('Failed to fetch quotes:', error);
       const message = error instanceof Error ? error.message : 'Failed to fetch live prices';
@@ -474,14 +488,14 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         if (!greeksInfo.hasData) {
           // Check if we have error data indicating premium required
           const firstLegWithError = greeksInfo.legs.find(l => l.data?.error);
-          if (firstLegWithError?.data?.error?.includes('premium')) {
+          if (firstLegWithError?.data?.error?.toLowerCase().includes('premium')) {
             return (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-muted-foreground text-xs cursor-help">Premium</span>
+                  <span className="text-amber-600 dark:text-amber-400 text-xs cursor-help">Premium</span>
                 </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs">Alpha Vantage premium subscription required for real-time Greeks</p>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-xs">Alpha Vantage options data requires a premium subscription. Free API keys do not have access to options chains or Greeks.</p>
                 </TooltipContent>
               </Tooltip>
             );

@@ -106,7 +106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const summary = calculateSummary(positions);
 
       // Step 5: Update transaction strategy tags based on positions
-      transactions.forEach((txn) => {
+      transactions.forEach((txn: typeof transactions[0]) => {
         const position = positions.find((p) => p.transactionIds.includes(txn.id));
         if (position) {
           txn.positionId = position.id;
@@ -115,7 +115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Sort transactions by date (most recent first)
-      transactions.sort((a, b) => {
+      transactions.sort((a: typeof transactions[0], b: typeof transactions[0]) => {
         const dateA = new Date(a.activityDate);
         const dateB = new Date(b.activityDate);
         return dateB.getTime() - dateA.getTime();
@@ -567,10 +567,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const response = await fetch(url);
           const data = await response.json();
           
-          // Log the raw response for debugging
-          console.log(`[Greeks] ${symbol} raw response keys:`, Object.keys(data));
+          // Handle informational messages (often premium subscription required)
           if (data['Information']) {
-            console.log(`[Greeks] ${symbol} info message:`, data['Information']);
+            console.log(`[Greeks] ${symbol}: ${data['Information']}`);
             errors.push(`${symbol}: ${data['Information']}`);
             // Mark all legs for this symbol as unavailable with specific message
             for (const leg of symbolGroups[symbol]) {
@@ -584,11 +583,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
             continue; // Skip to next symbol
           }
+          
+          // Handle explicit error messages
           if (data['Error Message']) {
             console.log(`[Greeks] ${symbol} error:`, data['Error Message']);
-          }
-          if (data['Meta Data']) {
-            console.log(`[Greeks] ${symbol} meta:`, data['Meta Data']);
           }
 
           if (data['Note']) {
@@ -605,18 +603,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const optionsChain = data.data || [];
           chainCache[symbol] = optionsChain;
           
-          // Log some basic info about the chain
-          console.log(`[Greeks] ${symbol}: Received ${optionsChain.length} contracts`);
-          
           // Check if we got valid data or placeholder data from Alpha Vantage
           if (optionsChain.length > 0) {
             const sampleContract = optionsChain[0];
             const sampleExpiration = sampleContract.expiration || '';
-            console.log(`[Greeks] ${symbol} sample: exp=${sampleExpiration}, strike=${sampleContract.strike}, type=${sampleContract.type}`);
             
             // Alpha Vantage free tier returns placeholder data like "2099-99-99"
             if (sampleExpiration.includes('2099') || sampleExpiration === '2099-99-99') {
-              console.log(`[Greeks] Alpha Vantage returned placeholder data for ${symbol} - premium subscription may be required`);
               errors.push(`Options data for ${symbol} requires Alpha Vantage premium subscription`);
               // Mark all legs for this symbol as unavailable
               for (const leg of symbolGroups[symbol]) {
@@ -630,12 +623,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               continue; // Skip to next symbol
             }
-            
-            // Log available expirations
-            const availableExpirations = new Set(optionsChain.map((c: any) => c.expiration));
-            console.log(`[Greeks] ${symbol} available expirations: ${Array.from(availableExpirations).slice(0, 10).join(', ')}`);
-          } else {
-            console.log(`[Greeks] No options chain data returned for ${symbol}`);
           }
 
           // Match user's requested contracts from the chain
@@ -644,8 +631,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           for (const leg of legsForSymbol) {
             const normalizedExpiration = normalizeDate(leg.expiration);
             const legType = leg.type.toLowerCase();
-            
-            console.log(`[Greeks] Looking for: ${symbol} ${normalizedExpiration} ${leg.strike} ${legType}`);
             
             // Find matching contract in chain
             const matchedContract = optionsChain.find((contract: any) => {
