@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar } from '@/components/FilterBar';
 import { StrategyBadge } from '@/components/StrategyBadge';
@@ -12,6 +13,7 @@ import { format } from 'date-fns';
 import { Link2, MessageSquare, Unlink } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { computePositionHash } from '@/lib/positionHash';
+import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
 interface OpenPositionsProps {
@@ -51,6 +53,36 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       computeHashes();
     }
   }, [openPositions.length]);
+  
+  // Fetch comment counts for all position hashes
+  const allHashes = useMemo(() => Array.from(positionHashes.values()), [positionHashes]);
+  
+  const { data: commentCountsData } = useQuery<{ success: boolean; counts: Record<string, number> }>({
+    queryKey: ['/api/position-comments/counts', allHashes],
+    queryFn: async () => {
+      if (allHashes.length === 0) return { success: true, counts: {} };
+      const res = await apiRequest('POST', '/api/position-comments/counts', { positionHashes: allHashes });
+      return res.json();
+    },
+    enabled: isAuthenticated && allHashes.length > 0,
+    staleTime: 30000,
+  });
+  
+  const commentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (commentCountsData?.counts) {
+      Object.entries(commentCountsData.counts).forEach(([hash, count]) => {
+        counts.set(hash, count);
+      });
+    }
+    return counts;
+  }, [commentCountsData]);
+  
+  const getCommentCount = (posId: string): number => {
+    const hash = positionHashes.get(posId);
+    if (!hash) return 0;
+    return commentCounts.get(hash) || 0;
+  };
   
   const handleOpenComments = (pos: Position) => {
     const hash = positionHashes.get(pos.id);
@@ -211,44 +243,52 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     ...(isAuthenticated ? [{
       key: 'notes',
       header: 'Actions',
-      accessor: (row: Position) => (
-        <div className="flex items-center gap-1 justify-center">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleOpenComments(row);
-            }}
-            data-testid={`button-notes-position-${row.id}`}
-          >
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </Button>
-          {row.isManuallyGrouped && row.manualGroupId && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUngroupPosition(row);
-                  }}
-                  disabled={ungroupingId === row.manualGroupId}
-                  data-testid={`button-ungroup-position-${row.id}`}
-                >
-                  <Unlink className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Ungroup this manually grouped position</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      ),
+      accessor: (row: Position) => {
+        const count = getCommentCount(row.id);
+        return (
+          <div className="flex items-center gap-1 justify-center">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 relative"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenComments(row);
+              }}
+              data-testid={`button-notes-position-${row.id}`}
+            >
+              <MessageSquare className={`h-4 w-4 ${count > 0 ? 'text-primary' : 'text-muted-foreground'}`} />
+              {count > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                  {count > 9 ? '9+' : count}
+                </span>
+              )}
+            </Button>
+            {row.isManuallyGrouped && row.manualGroupId && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUngroupPosition(row);
+                    }}
+                    disabled={ungroupingId === row.manualGroupId}
+                    data-testid={`button-ungroup-position-${row.id}`}
+                  >
+                    <Unlink className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Ungroup this manually grouped position</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
       sortValue: () => 0,
       className: 'text-center w-[80px]',
     }] : []),
