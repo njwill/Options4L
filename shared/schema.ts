@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pgTable, uuid, varchar, timestamp, integer, text, numeric, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, timestamp, integer, text, numeric, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Transaction code types from Robinhood
@@ -213,10 +213,12 @@ export type UploadResponse = z.infer<typeof uploadResponseSchema>;
 // Database Tables (Drizzle ORM)
 // ============================================================================
 
-// Users table - stores NOSTR public keys
+// Users table - stores authentication info (NOSTR pubkeys or email)
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  nostrPubkey: varchar("nostr_pubkey", { length: 64 }).notNull().unique(),
+  nostrPubkey: varchar("nostr_pubkey", { length: 64 }).unique(),
+  email: varchar("email", { length: 255 }).unique(),
+  emailVerified: boolean("email_verified").default(false),
   displayName: varchar("display_name", { length: 100 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
@@ -224,6 +226,19 @@ export const users = pgTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+// Email verification tokens table - for magic link authentication
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email", { length: 255 }).notNull(),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  used: boolean("used").default(false),
+});
+
+export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
+export type InsertEmailVerificationToken = typeof emailVerificationTokens.$inferInsert;
 
 // Uploads table - tracks each file upload
 export const uploads = pgTable("uploads", {
