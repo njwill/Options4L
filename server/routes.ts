@@ -580,6 +580,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return dateStr;
       };
 
+      // Debug: Log requested legs
+      console.log('[Greeks DEBUG] Requested legs:', JSON.stringify(legs.map(l => ({
+        symbol: l.symbol,
+        strike: l.strike,
+        expiration: l.expiration,
+        type: l.type,
+        legId: l.legId
+      })), null, 2));
+
       // Fetch options chain for each unique symbol using Massive.com API
       // Endpoint: GET /v3/snapshot/options/{underlyingAsset}
       // Response: { status: "OK", results: [ { details, greeks, last_quote, underlying_asset, ... } ] }
@@ -587,6 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // Massive.com API endpoint for options chain snapshot
           const url = `https://api.massive.com/v3/snapshot/options/${encodeURIComponent(symbol)}?apiKey=${apiKey}&limit=250`;
+          console.log(`[Greeks DEBUG] Fetching: ${url.replace(apiKey, '***')}`);
           const response = await fetch(url);
           
           // Check HTTP status codes first (transport-level errors)
@@ -601,6 +611,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           const data = await response.json();
+          
+          // Debug: Log raw API response structure
+          console.log(`[Greeks DEBUG] ${symbol} HTTP status: ${response.status}`);
+          console.log(`[Greeks DEBUG] ${symbol} Response keys:`, Object.keys(data));
+          console.log(`[Greeks DEBUG] ${symbol} data.status:`, data.status);
+          console.log(`[Greeks DEBUG] ${symbol} results count:`, data.results?.length || 0);
+          if (data.results && data.results.length > 0) {
+            console.log(`[Greeks DEBUG] ${symbol} First result sample:`, JSON.stringify(data.results[0], null, 2));
+          }
           
           // Handle API-level errors (status: "ERROR" in JSON body)
           if (data.status === 'ERROR' || data.status === 'NOT_FOUND' || data.error) {
@@ -645,6 +664,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const normalizedExpiration = normalizeDate(leg.expiration);
             const legType = leg.type.toLowerCase();
             
+            console.log(`[Greeks DEBUG] Looking for: exp=${normalizedExpiration}, type=${legType}, strike=${leg.strike}`);
+            
             // Find matching contract in chain
             // Massive.com structure: details.strike_price, details.expiration_date, details.contract_type
             const matchedContract = optionsChain.find((contract: any) => {
@@ -659,6 +680,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 Math.abs(contractStrike - leg.strike) < 0.01 // Float comparison tolerance
               );
             });
+            
+            console.log(`[Greeks DEBUG] Match result for ${leg.legId}:`, matchedContract ? 'FOUND' : 'NOT FOUND');
 
             if (matchedContract) {
               const details = matchedContract.details || {};
