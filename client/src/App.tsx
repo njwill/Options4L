@@ -284,6 +284,26 @@ function AppContent() {
     });
   };
 
+  const handleUngroupPosition = async (groupId: string) => {
+    // Only authenticated users can ungroup positions
+    if (!user) {
+      throw new Error('Authentication required to ungroup positions');
+    }
+
+    const response = await fetch(`/api/manual-groupings/${groupId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || 'Failed to ungroup position');
+    }
+
+    // Reload user data to reflect the ungrouping
+    await loadUserData();
+  };
+
   const tabs = [
     { id: 'dashboard' as TabType, label: 'Dashboard', count: null },
     { id: 'open' as TabType, label: 'Open Positions', count: summary.openPositionsCount },
@@ -401,8 +421,8 @@ function AppContent() {
                   summary={summary}
                 />
               )}
-              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} />}
-              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} />}
+              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} />}
+              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
               {activeTab === 'account' && <AccountSettings onDataChange={() => {
                 if (user) {

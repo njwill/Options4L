@@ -177,6 +177,8 @@ export const positionSchema = z.object({
   rollChainId: z.string().nullable(), // Links to roll chain if part of one
   rolledFromPositionId: z.string().nullable(), // Previous position in chain
   rolledToPositionId: z.string().nullable(), // Next position in chain
+  isManuallyGrouped: z.boolean().optional(), // True if this position was created via manual grouping
+  manualGroupId: z.string().nullable().optional(), // The groupId for manual groupings (used for ungrouping)
 });
 
 export type Position = z.infer<typeof positionSchema>;

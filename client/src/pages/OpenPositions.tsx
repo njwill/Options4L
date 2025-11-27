@@ -6,18 +6,21 @@ import { PositionDetailPanel } from '@/components/PositionDetailPanel';
 import { PositionCommentsPanel } from '@/components/PositionCommentsPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare } from 'lucide-react';
+import { Link2, MessageSquare, Unlink } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { computePositionHash } from '@/lib/positionHash';
+import { useToast } from '@/hooks/use-toast';
 
 interface OpenPositionsProps {
   positions: Position[];
   rollChains: RollChain[];
+  onUngroupPosition?: (groupId: string) => Promise<void>;
 }
 
-export default function OpenPositions({ positions, rollChains }: OpenPositionsProps) {
+export default function OpenPositions({ positions, rollChains, onUngroupPosition }: OpenPositionsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
@@ -27,9 +30,11 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
   const [selectedPositionHash, setSelectedPositionHash] = useState('');
   const [selectedPositionDesc, setSelectedPositionDesc] = useState('');
   const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
+  const [ungroupingId, setUngroupingId] = useState<string | null>(null);
   
   const { user } = useAuth();
   const isAuthenticated = !!user;
+  const { toast } = useToast();
 
   const openPositions = positions.filter((p) => p.status === 'open');
   
@@ -53,6 +58,27 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
       setSelectedPositionHash(hash);
       setSelectedPositionDesc(`${pos.symbol} - ${pos.strategyType} (${pos.entryDate})`);
       setCommentsPanelOpen(true);
+    }
+  };
+  
+  const handleUngroupPosition = async (pos: Position) => {
+    if (!pos.manualGroupId || !onUngroupPosition) return;
+    
+    setUngroupingId(pos.manualGroupId);
+    try {
+      await onUngroupPosition(pos.manualGroupId);
+      toast({
+        title: 'Position ungrouped',
+        description: 'The position has been ungrouped. Transactions will be re-analyzed.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to ungroup position',
+        variant: 'destructive',
+      });
+    } finally {
+      setUngroupingId(null);
     }
   };
 
@@ -175,23 +201,47 @@ export default function OpenPositions({ positions, rollChains }: OpenPositionsPr
     },
     ...(isAuthenticated ? [{
       key: 'notes',
-      header: 'Notes',
+      header: 'Actions',
       accessor: (row: Position) => (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenComments(row);
-          }}
-          data-testid={`button-notes-position-${row.id}`}
-        >
-          <MessageSquare className="h-4 w-4 text-muted-foreground" />
-        </Button>
+        <div className="flex items-center gap-1 justify-center">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenComments(row);
+            }}
+            data-testid={`button-notes-position-${row.id}`}
+          >
+            <MessageSquare className="h-4 w-4 text-muted-foreground" />
+          </Button>
+          {row.isManuallyGrouped && row.manualGroupId && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUngroupPosition(row);
+                  }}
+                  disabled={ungroupingId === row.manualGroupId}
+                  data-testid={`button-ungroup-position-${row.id}`}
+                >
+                  <Unlink className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Ungroup this manually grouped position</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       ),
       sortValue: () => 0,
-      className: 'text-center w-[60px]',
+      className: 'text-center w-[80px]',
     }] : []),
   ] as Column<Position>[];
 

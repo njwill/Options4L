@@ -42,6 +42,8 @@ interface PositionRecord {
   legs: LegLedger[];
   cashFlows: { date: string; amount: number; txnId: string }[];
   transactionIds: string[];
+  isManuallyGrouped?: boolean;
+  manualGroupId?: string | null;
 }
 
 interface AnomalyRecord {
@@ -452,6 +454,8 @@ function applyManualGroupings(
       legs: allLegs,
       cashFlows: allCashFlows,
       transactionIds: allTxnIds,
+      isManuallyGrouped: true, // Mark this position as manually grouped
+      manualGroupId: groupId, // Store the groupId for ungrouping
     };
 
     manuallyGroupedPositions.push(mergedPosition);
@@ -633,6 +637,8 @@ function convertToPosition(record: PositionRecord): Position {
     rollChainId: null,
     rolledFromPositionId: null,
     rolledToPositionId: null,
+    isManuallyGrouped: record.isManuallyGrouped || false,
+    manualGroupId: record.manualGroupId || null,
   };
 }
 
