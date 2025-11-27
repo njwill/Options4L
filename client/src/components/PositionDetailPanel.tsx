@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,22 +13,8 @@ import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
+import { usePriceCache, LegPriceData } from '@/hooks/use-price-cache';
 import { RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-
-interface LegPriceData {
-  legId: string;
-  symbol: string;
-  strike: number;
-  expiration: string;
-  type: string;
-  bid?: number;
-  ask?: number;
-  last?: number;
-  mark?: number;
-  impliedVolatility?: number;
-  underlyingPrice?: number;
-  error?: string;
-}
 
 interface PositionDetailPanelProps {
   position: Position | null;
@@ -40,11 +26,12 @@ interface PositionDetailPanelProps {
 export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: PositionDetailPanelProps) {
   const { user } = useAuth();
   const isAuthenticated = !!user;
-  const [legPrices, setLegPrices] = useState<Record<string, LegPriceData>>({});
+  const { getPositionPrices, setPositionPrices, hasPositionPrices } = usePriceCache();
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
-  const cachedPositionIdRef = useRef<string | null>(null);
+
+  const legPrices = position ? (getPositionPrices(position.id) || {}) : {};
 
   const fetchLegPrices = async () => {
     if (!position || !isAuthenticated || position.status !== 'open') return;
@@ -74,8 +61,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
       const data = await response.json();
       
       if (data.success && data.optionData) {
-        setLegPrices(data.optionData);
-        cachedPositionIdRef.current = position.id;
+        setPositionPrices(position.id, data.optionData);
       } else if (data.message) {
         setPriceError(data.message);
       }
@@ -89,19 +75,13 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
 
   useEffect(() => {
     if (isOpen && position && position.status === 'open' && isAuthenticated) {
-      // Only auto-fetch if we don't have cached prices for this position
-      const hasCachedPrices = cachedPositionIdRef.current === position.id && Object.keys(legPrices).length > 0;
-      if (!hasCachedPrices) {
-        // Clear stale cache if opening a different position
-        if (cachedPositionIdRef.current !== position.id) {
-          setLegPrices({});
-          setPriceError(null);
-          setTotalUnrealizedPL(null);
-        }
+      if (!hasPositionPrices(position.id)) {
+        setPriceError(null);
+        setTotalUnrealizedPL(null);
         fetchLegPrices();
       }
     }
-  }, [isOpen, position?.id, isAuthenticated]);
+  }, [isOpen, position?.id, isAuthenticated, hasPositionPrices]);
 
   useEffect(() => {
     if (!position || Object.keys(legPrices).length === 0) {
@@ -123,7 +103,6 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
         const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
         const currentPrice = priceData.mark;
         const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
-        // Short positions profit when price drops, long positions profit when price rises
         const unrealizedPL = isSell 
           ? (entryPrice - currentPrice) * leg.quantity * 100
           : (currentPrice - entryPrice) * leg.quantity * 100;

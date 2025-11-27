@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from './use-auth';
 
-interface LegPriceData {
+export interface LegPriceData {
   legId: string;
   symbol: string;
   strike: number;
