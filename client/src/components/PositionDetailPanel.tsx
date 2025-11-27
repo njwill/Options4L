@@ -269,28 +269,28 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
                     
                     {/* Current price and P/L row for open legs */}
                     {leg.status === 'open' && (
-                      <div className="mt-3 pt-3 border-t flex items-center justify-between">
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">Current:</span>
+                      <div className="mt-3 py-2 px-3 rounded bg-muted/50 flex items-center justify-between">
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>Current:</span>
                           {isLoadingPrices ? (
-                            <span className="text-muted-foreground animate-pulse">Loading...</span>
+                            <span className="animate-pulse">Loading...</span>
                           ) : currentPrice && currentPrice > 0 ? (
-                            <span className="font-medium">{formatCurrency(currentPrice)}</span>
+                            <span className="font-medium text-foreground">{formatCurrency(currentPrice)}</span>
                           ) : priceData?.error ? (
-                            <span className="text-destructive text-xs">{priceData.error}</span>
+                            <span className="text-destructive">{priceData.error}</span>
                           ) : (
-                            <span className="text-muted-foreground">—</span>
+                            <span>—</span>
                           )}
                           {currentPrice && currentPrice > 0 && (
                             <>
-                              <span className="text-muted-foreground">vs Entry:</span>
-                              <span className="font-medium">{formatCurrency(entryPrice)}</span>
+                              <span>vs Entry:</span>
+                              <span className="font-medium text-foreground">{formatCurrency(entryPrice)}</span>
                             </>
                           )}
                         </div>
                         {unrealizedPL !== null && (
-                          <div className={`flex items-center gap-1 font-medium ${unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {unrealizedPL > 0 ? <TrendingUp className="h-4 w-4" /> : unrealizedPL < 0 ? <TrendingDown className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
+                          <div className={`flex items-center gap-1 text-sm font-semibold ${unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {unrealizedPL > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : unrealizedPL < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
                             <span>{formatCurrency(unrealizedPL)}</span>
                           </div>
                         )}
