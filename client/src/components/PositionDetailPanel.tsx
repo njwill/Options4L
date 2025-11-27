@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +44,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
+  const cachedPositionIdRef = useRef<string | null>(null);
 
   const fetchLegPrices = async () => {
     if (!position || !isAuthenticated || position.status !== 'open') return;
@@ -74,6 +75,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
       
       if (data.success && data.optionData) {
         setLegPrices(data.optionData);
+        cachedPositionIdRef.current = position.id;
       } else if (data.message) {
         setPriceError(data.message);
       }
@@ -87,7 +89,17 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
 
   useEffect(() => {
     if (isOpen && position && position.status === 'open' && isAuthenticated) {
-      fetchLegPrices();
+      // Only auto-fetch if we don't have cached prices for this position
+      const hasCachedPrices = cachedPositionIdRef.current === position.id && Object.keys(legPrices).length > 0;
+      if (!hasCachedPrices) {
+        // Clear stale cache if opening a different position
+        if (cachedPositionIdRef.current !== position.id) {
+          setLegPrices({});
+          setPriceError(null);
+          setTotalUnrealizedPL(null);
+        }
+        fetchLegPrices();
+      }
     }
   }, [isOpen, position?.id, isAuthenticated]);
 
