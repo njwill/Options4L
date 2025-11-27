@@ -335,18 +335,18 @@ function AppContent() {
                 <p className="text-xs text-muted-foreground">Track strategies, rolls, and P/L</p>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="ghost" asChild data-testid="link-instructions">
-                  <a href="https://youtu.be/W59dDyb_tyw" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                    Instructions
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </Button>
                 <Button 
                   variant="ghost" 
                   onClick={() => setActiveTab('dashboard')}
                   data-testid="button-home-nav"
                 >
                   Home
+                </Button>
+                <Button variant="ghost" asChild data-testid="link-instructions">
+                  <a href="https://youtu.be/W59dDyb_tyw" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                    Instructions
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
                 </Button>
                 {positions.length > 0 && (
                   <label htmlFor="file-upload-header">
