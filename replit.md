@@ -15,6 +15,7 @@ A comprehensive trading analysis application designed to process Robinhood tradi
 - **NEW:** Transaction deduplication for authenticated users
 - **NEW:** Session import to save anonymous data after login
 - **NEW:** Account management with upload history and data export
+- **NEW:** Transaction comments - add notes to individual trades (authenticated users only)
 
 ## User Preferences
 
@@ -173,10 +174,11 @@ Preferred communication style: Simple, everyday language.
 
 **Migration Setup:** Schema defined in `shared/schema.ts` with migration output to `./migrations` directory. Database connection via `DATABASE_URL` environment variable.
 
-**Active Usage:** Database is used for authenticated user data with three main tables:
+**Active Usage:** Database is used for authenticated user data with four main tables:
 - `users` - NOSTR public keys, display names, creation timestamps
 - `uploads` - Upload metadata (filename, date, transaction counts)
 - `transactions` - Individual transaction records with deduplication hash
+- `comments` - User notes on transactions, linked by transactionHash for persistence across re-uploads
 
 **Schema Highlights:**
 - User-scoped data isolation via foreign keys
@@ -208,3 +210,12 @@ When authenticated users sign in:
 - Retry mechanism with MAX_LOAD_ATTEMPTS=3 and 1000ms delays between attempts
 - Handles transient auth settling issues gracefully
 - Counters reset on logout for fresh retry budget per session
+
+### Transaction Comments
+Comments feature for authenticated users to add notes to individual trades:
+- Comments linked to transactionHash (not transactionId) for persistence across file re-uploads
+- Hash computed from: activityDate, instrument, transCode, quantity, price, amount
+- Frontend uses `computeTransactionHash` utility matching backend hashing
+- API endpoints: GET/POST `/api/comments`, PUT/DELETE `/api/comments/:id`
+- CommentsPanel component with Sheet UI for add/edit/delete operations
+- Notes column visible only in Transaction History table for authenticated users
