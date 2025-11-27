@@ -198,13 +198,16 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     try {
       // Build leg requests for options chain
       const legRequests = buildLegRequests();
+      console.log('[Greeks Debug] Leg requests built:', legRequests.length, legRequests);
       
       // Fetch options chain data with Greeks (groups by symbol internally)
       if (legRequests.length > 0) {
         const chainResponse = await apiRequest('POST', '/api/options/chain', { legs: legRequests });
         const chainData = await chainResponse.json();
+        console.log('[Greeks Debug] Chain response:', chainData);
         
         if (chainData.success && chainData.optionData) {
+          console.log('[Greeks Debug] Setting optionData with keys:', Object.keys(chainData.optionData));
           setOptionData(chainData.optionData);
           
           // Extract underlying prices from options data
@@ -347,6 +350,13 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         const data = optionData[legId] || null;
         legsData.push({ legId, data, legInfo: leg });
       });
+    }
+    
+    // Debug: Log what we're looking for vs what we have
+    if (Object.keys(optionData).length > 0 && position.legs && position.legs.length > 0) {
+      const lookingFor = position.legs.map((_, i) => `${position.id}-leg-${i}`);
+      const available = Object.keys(optionData);
+      console.log('[Greeks Debug] Position:', position.id, 'Looking for:', lookingFor, 'Available:', available);
     }
     
     return {
