@@ -542,24 +542,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Helper to parse date string to Unix timestamp (seconds)
+      // Handles: MM/DD/YYYY, YYYY-MM-DD, ISO 8601 (2024-07-19T00:00:00.000Z)
       const dateToTimestamp = (dateStr: string): number => {
         if (!dateStr) return 0;
-        let date: Date;
+        
+        let year: number, month: number, day: number;
         
         // Handle MM/DD/YYYY format
         if (dateStr.includes('/')) {
           const parts = dateStr.split('/');
           if (parts.length === 3) {
-            const [month, day, year] = parts;
-            date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            month = parseInt(parts[0]);
+            day = parseInt(parts[1]);
+            year = parseInt(parts[2]);
           } else {
-            date = new Date(dateStr);
+            return 0;
+          }
+        } else if (dateStr.includes('T')) {
+          // ISO 8601 format: 2024-07-19T00:00:00.000Z
+          const datePart = dateStr.split('T')[0];
+          const parts = datePart.split('-');
+          if (parts.length === 3) {
+            year = parseInt(parts[0]);
+            month = parseInt(parts[1]);
+            day = parseInt(parts[2]);
+          } else {
+            return 0;
+          }
+        } else if (dateStr.includes('-')) {
+          // YYYY-MM-DD format
+          const parts = dateStr.split('-');
+          if (parts.length === 3) {
+            year = parseInt(parts[0]);
+            month = parseInt(parts[1]);
+            day = parseInt(parts[2]);
+          } else {
+            return 0;
           }
         } else {
-          // YYYY-MM-DD format
-          date = new Date(dateStr);
+          return 0;
         }
         
+        // Yahoo expirationDates are Unix timestamps at 21:00 UTC (4pm ET during EST)
+        const date = new Date(Date.UTC(year, month - 1, day, 21, 0, 0));
         return Math.floor(date.getTime() / 1000);
       };
 
@@ -590,10 +615,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const leg of legsForSymbol) {
           expirationTimestamps.add(dateToTimestamp(leg.expiration));
         }
+        const uniqueExpirations = Array.from(expirationTimestamps);
         
         try {
           // Yahoo Finance API - fetch each expiration date separately
-          for (const expTimestamp of expirationTimestamps) {
+          for (const expTimestamp of uniqueExpirations) {
             const url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}?date=${expTimestamp}`;
             console.log(`[Yahoo] Fetching: ${symbol} exp ${new Date(expTimestamp * 1000).toISOString().split('T')[0]}`);
             

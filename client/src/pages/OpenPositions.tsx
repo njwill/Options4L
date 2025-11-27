@@ -176,12 +176,12 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     return legs;
   };
 
-  // Fetch live quotes for underlying symbols and options chain with Greeks
+  // Fetch live quotes for underlying symbols and options chain
   const fetchLiveQuotes = async () => {
     if (!isAuthenticated) {
       toast({
         title: 'Sign in required',
-        description: 'Please sign in and add your Alpha Vantage API key in Account Settings to fetch live prices.',
+        description: 'Please sign in to fetch live option prices.',
         variant: 'destructive',
       });
       return;
@@ -228,8 +228,6 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
           allErrors.push(...chainData.errors);
           if (chainData.errors.some((e: string) => e.includes('Rate limit'))) {
             setQuotesError('API rate limit reached. Try again in a minute.');
-          } else if (chainData.errors.some((e: string) => e.toLowerCase().includes('premium'))) {
-            setQuotesError('Alpha Vantage options data requires a premium subscription. Visit alphavantage.co/premium for details.');
           }
         }
         
@@ -275,23 +273,12 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       const symbolCount = uniqueSymbols.length;
       const legCount = legRequests.length;
       
-      // Check if all data shows premium required
-      const hasPremiumError = allErrors.some((e: string) => e.toLowerCase().includes('premium'));
-      
-      if (hasPremiumError) {
-        toast({
-          title: 'Premium Subscription Required',
-          description: 'Alpha Vantage options data requires a premium API key. Greeks are not available with free tier.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Market data updated',
-          description: legCount > 0 
-            ? `Fetched Greeks for ${legCount} option leg(s) across ${symbolCount} symbol(s)`
-            : `Fetched prices for ${symbolCount} symbol(s)`,
-        });
-      }
+      toast({
+        title: 'Market data updated',
+        description: legCount > 0 
+          ? `Fetched prices for ${legCount} option leg(s) across ${symbolCount} symbol(s)`
+          : `Fetched prices for ${symbolCount} symbol(s)`,
+      });
     } catch (error) {
       console.error('Failed to fetch quotes:', error);
       const message = error instanceof Error ? error.message : 'Failed to fetch live prices';
@@ -367,12 +354,6 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       legs: legsData,
       hasData: legsData.some(l => l.data && !l.data.error),
     };
-  };
-
-  // Format Greek value for display
-  const formatGreek = (value: number | null, decimals: number = 4): string => {
-    if (value === null || value === undefined) return '-';
-    return value.toFixed(decimals);
   };
 
   const columns: Column<Position>[] = [
@@ -480,26 +461,12 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       className: 'text-right',
     },
     {
-      key: 'greeks',
-      header: 'Greeks',
+      key: 'livePrices',
+      header: 'Live Prices',
       accessor: (row) => {
         const greeksInfo = getPositionGreeks(row);
         
         if (!greeksInfo.hasData) {
-          // Check if we have error data indicating premium required
-          const firstLegWithError = greeksInfo.legs.find(l => l.data?.error);
-          if (firstLegWithError?.data?.error?.toLowerCase().includes('premium')) {
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-amber-600 dark:text-amber-400 text-xs cursor-help">Premium</span>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs">
-                  <p className="text-xs">Alpha Vantage options data requires a premium subscription. Free API keys do not have access to options chains or Greeks.</p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          }
           return <span className="text-muted-foreground text-xs">-</span>;
         }
         
@@ -511,6 +478,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
               }
               
               const legLabel = `${legInfo.strike}${legInfo.optionType?.[0]?.toUpperCase() || ''}`;
+              const mark = data.mark || ((data.bid + data.ask) / 2);
               
               return (
                 <Tooltip key={legId}>
@@ -518,7 +486,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                     <div className="text-xs cursor-help">
                       <span className="text-muted-foreground mr-1">{legLabel}:</span>
                       <span className="tabular-nums font-medium">
-                        Δ{formatGreek(data.delta, 2)}
+                        ${mark.toFixed(2)}
                       </span>
                       {data.impliedVolatility && (
                         <span className="tabular-nums text-muted-foreground ml-1">
@@ -533,21 +501,18 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                         {data.symbol} ${data.strike} {data.type?.toUpperCase()} {data.expiration}
                       </div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                        <div>Delta: <span className="tabular-nums font-medium">{formatGreek(data.delta)}</span></div>
-                        <div>Gamma: <span className="tabular-nums font-medium">{formatGreek(data.gamma)}</span></div>
-                        <div>Theta: <span className="tabular-nums font-medium">{formatGreek(data.theta)}</span></div>
-                        <div>Vega: <span className="tabular-nums font-medium">{formatGreek(data.vega)}</span></div>
-                        <div>Rho: <span className="tabular-nums font-medium">{formatGreek(data.rho)}</span></div>
-                        <div>IV: <span className="tabular-nums font-medium">{data.impliedVolatility ? `${(data.impliedVolatility * 100).toFixed(1)}%` : '-'}</span></div>
+                        <div>Bid: <span className="tabular-nums">${(data.bid || 0).toFixed(2)}</span></div>
+                        <div>Ask: <span className="tabular-nums">${(data.ask || 0).toFixed(2)}</span></div>
+                        <div>Mark: <span className="tabular-nums font-medium">${mark.toFixed(2)}</span></div>
+                        <div>Last: <span className="tabular-nums">${(data.last || 0).toFixed(2)}</span></div>
                       </div>
-                      <div className="border-t pt-1 mt-2 grid grid-cols-2 gap-x-4 text-xs">
-                        <div>Bid: <span className="tabular-nums">${data.bid.toFixed(2)}</span></div>
-                        <div>Ask: <span className="tabular-nums">${data.ask.toFixed(2)}</span></div>
-                        <div>Mark: <span className="tabular-nums font-medium">${data.mark.toFixed(2)}</span></div>
-                        <div>Last: <span className="tabular-nums">${data.last.toFixed(2)}</span></div>
-                      </div>
+                      {data.impliedVolatility && (
+                        <div className="border-t pt-1 mt-1 text-xs">
+                          IV: <span className="tabular-nums font-medium">{(data.impliedVolatility * 100).toFixed(1)}%</span>
+                        </div>
+                      )}
                       <div className="border-t pt-1 mt-1 text-xs text-muted-foreground">
-                        Vol: {data.volume.toLocaleString()} | OI: {data.openInterest.toLocaleString()}
+                        Vol: {(data.volume || 0).toLocaleString()} | OI: {(data.openInterest || 0).toLocaleString()}
                       </div>
                     </div>
                   </TooltipContent>
@@ -560,7 +525,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       sortValue: (row) => {
         const greeksInfo = getPositionGreeks(row);
         const firstLeg = greeksInfo.legs[0]?.data;
-        return firstLeg?.delta || 0;
+        return firstLeg?.mark || 0;
       },
     },
     ...(isAuthenticated ? [{
@@ -672,14 +637,14 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                   data-testid="button-refresh-quotes"
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
-                  {isLoadingQuotes ? 'Loading...' : 'Live Data + Greeks'}
+                  {isLoadingQuotes ? 'Loading...' : 'Refresh Prices'}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Fetch live option prices and Greeks from Alpha Vantage</p>
+                <p>Fetch live option prices from Yahoo Finance</p>
                 {!isAuthenticated && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Sign in and add API key in Account Settings
+                    Sign in to refresh prices
                   </p>
                 )}
               </TooltipContent>

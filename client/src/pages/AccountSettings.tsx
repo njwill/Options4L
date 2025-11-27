@@ -75,17 +75,9 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
   // Account unlinking state
   const [isUnlinkingNostr, setIsUnlinkingNostr] = useState(false);
   const [isUnlinkingEmail, setIsUnlinkingEmail] = useState(false);
-  
-  // API key state
-  const [apiKey, setApiKey] = useState('');
-  const [hasApiKey, setHasApiKey] = useState(false);
-  const [maskedApiKey, setMaskedApiKey] = useState<string | null>(null);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
 
   useEffect(() => {
     fetchProfileData();
-    fetchApiKeyStatus();
   }, []);
 
   const fetchProfileData = async () => {
@@ -115,89 +107,6 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-  
-  const fetchApiKeyStatus = async () => {
-    try {
-      const res = await fetch('/api/user/api-key-status', { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setHasApiKey(data.hasApiKey);
-        setMaskedApiKey(data.maskedKey);
-      }
-    } catch (error) {
-      console.error('Failed to fetch API key status:', error);
-    }
-  };
-  
-  const handleSaveApiKey = async () => {
-    try {
-      setIsSavingApiKey(true);
-      const response = await fetch('/api/user/api-key', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: apiKey.trim() || null }),
-        credentials: 'include',
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast({
-          title: 'Success',
-          description: data.message,
-        });
-        setApiKey('');
-        setShowApiKey(false);
-        fetchApiKeyStatus();
-      } else {
-        throw new Error(data.message);
-      }
-    } catch (error) {
-      console.error('Failed to save API key:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save API key',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSavingApiKey(false);
-    }
-  };
-  
-  const handleRemoveApiKey = async () => {
-    try {
-      setIsSavingApiKey(true);
-      const response = await fetch('/api/user/api-key', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: null }),
-        credentials: 'include',
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast({
-          title: 'Success',
-          description: 'API key removed',
-        });
-        setApiKey('');
-        setHasApiKey(false);
-        setMaskedApiKey(null);
-      } else {
-        throw new Error(data.message);
-      }
-    } catch (error) {
-      console.error('Failed to remove API key:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to remove API key',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSavingApiKey(false);
     }
   };
 
@@ -753,131 +662,24 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
         </CardContent>
       </Card>
 
-      {/* Market Data API Key */}
-      <Card data-testid="card-api-key">
+      {/* Market Data Info */}
+      <Card data-testid="card-market-data">
         <CardHeader>
-          <CardTitle>Market Data API</CardTitle>
+          <CardTitle>Market Data</CardTitle>
           <CardDescription>
-            Connect your Tradier API key to fetch live option prices and Greeks for your open positions
+            Live option prices for your open positions
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            Get a free sandbox API key from{' '}
-            <a 
-              href="https://developer.tradier.com/user/sign_up" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-primary hover:underline inline-flex items-center gap-1"
-              data-testid="link-tradier-api"
-            >
-              Tradier Developer
-              <ExternalLink className="w-3 h-3" />
-            </a>
-            {' '}(free sandbox: 60 calls/minute, includes Greeks from ORATS, 15-min delayed)
+        <CardContent>
+          <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md">
+            <Badge variant="secondary">Yahoo Finance</Badge>
+            <span className="text-sm text-muted-foreground">
+              No API key required - free real-time option prices
+            </span>
           </div>
-          
-          {hasApiKey ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-md">
-                <Key className="w-4 h-4 text-muted-foreground" />
-                <span className="font-mono text-sm" data-testid="text-masked-api-key">
-                  {maskedApiKey}
-                </span>
-                <Badge variant="secondary" className="ml-auto">Connected</Badge>
-              </div>
-              <div className="flex gap-2">
-                <div className="flex gap-2 flex-1">
-                  <div className="relative flex-1">
-                    <Input
-                      type={showApiKey ? 'text' : 'password'}
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="Enter new API key to replace"
-                      maxLength={32}
-                      data-testid="input-api-key"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                    >
-                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                  <Button 
-                    onClick={handleSaveApiKey} 
-                    disabled={isSavingApiKey || !apiKey.trim()}
-                    data-testid="button-save-api-key"
-                  >
-                    {isSavingApiKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  </Button>
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      disabled={isSavingApiKey}
-                      data-testid="button-remove-api-key"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Remove API Key</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to remove your Tradier API key? You will no longer be able to fetch live option prices and Greeks.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleRemoveApiKey}>
-                        Remove
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="api-key">API Key</Label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    id="api-key"
-                    type={showApiKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Enter your Tradier API access token"
-                    maxLength={64}
-                    data-testid="input-api-key"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                  >
-                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </Button>
-                </div>
-                <Button 
-                  onClick={handleSaveApiKey} 
-                  disabled={isSavingApiKey || !apiKey.trim()}
-                  data-testid="button-save-api-key"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {isSavingApiKey ? 'Saving...' : 'Save'}
-                </Button>
-              </div>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Click "Refresh Prices" on the Open Positions page to fetch current bid/ask prices for your options.
+          </p>
         </CardContent>
       </Card>
 

@@ -55,13 +55,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Market Data Integration
 
-**Provider:** Tradier - provides options data with Greeks from ORATS.
+**Provider:** Yahoo Finance - free options data, no API key required.
 **Endpoints Used:**
-- `/v1/markets/options/chains?symbol=X&expiration=YYYY-MM-DD&greeks=true` - Options chain with Greeks (delta, gamma, theta, vega, rho), implied volatility, quotes, open interest.
-**Free Sandbox Tier:** 60 API calls per minute, 15-minute delayed data.
-**User Configuration:** Users add their Tradier sandbox API access token in Account Settings page. Key is stored per-user in the database.
-**Data Available:** Price data (bid, ask, last, mark), Greeks (delta, gamma, theta, vega, rho), implied volatility (mid_iv), volume, open interest.
-**Sign Up:** https://developer.tradier.com/user/sign_up (no brokerage account required)
+- `https://query1.finance.yahoo.com/v7/finance/options/{symbol}?date={expirationTimestamp}` - Options chain with quotes, volume, open interest.
+**Rate Limits:** Reasonable use, no strict API key requirement.
+**User Configuration:** No API key needed - works automatically for authenticated users.
+**Data Available:** Price data (bid, ask, last, mark), implied volatility, volume, open interest, underlying price.
+**Note:** Greeks (delta, gamma, theta, vega) are not available through Yahoo Finance free API.
 
 ### Database Configuration
 
