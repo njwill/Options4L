@@ -325,3 +325,34 @@ export const updatePositionCommentSchema = z.object({
 
 export type InsertPositionCommentInput = z.infer<typeof insertPositionCommentSchema>;
 export type UpdatePositionCommentInput = z.infer<typeof updatePositionCommentSchema>;
+
+// Manual Position Groupings table - stores user-defined transaction groupings
+// When auto-detection fails to group transactions correctly (e.g., credit spreads shown as separate trades),
+// users can manually select transactions and group them as a specific strategy type
+export const manualPositionGroupings = pgTable("manual_position_groupings", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  groupId: varchar("group_id", { length: 64 }).notNull(), // UUID for the custom position group
+  transactionHash: varchar("transaction_hash", { length: 64 }).notNull(), // Links to specific transaction
+  strategyType: varchar("strategy_type", { length: 50 }).notNull(), // The strategy type chosen by user
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // Unique constraint: each transaction can only belong to one manual group per user
+  userTransactionGroupIdx: uniqueIndex("user_txn_group_idx").on(table.userId, table.transactionHash),
+}));
+
+export type ManualPositionGrouping = typeof manualPositionGroupings.$inferSelect;
+export type InsertManualPositionGrouping = typeof manualPositionGroupings.$inferInsert;
+
+// Zod schemas for manual grouping validation
+export const createManualGroupingSchema = z.object({
+  transactionHashes: z.array(z.string().min(1)).min(2, "At least 2 transactions required"),
+  strategyType: StrategyTypeEnum,
+});
+
+export const deleteManualGroupingSchema = z.object({
+  groupId: z.string().min(1),
+});
+
+export type CreateManualGroupingInput = z.infer<typeof createManualGroupingSchema>;
+export type DeleteManualGroupingInput = z.infer<typeof deleteManualGroupingSchema>;
