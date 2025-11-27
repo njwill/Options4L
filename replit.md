@@ -53,6 +53,16 @@ Preferred communication style: Simple, everyday language.
 **Backend:** `multer` (file uploads), `express` (HTTP server).
 **Build Tools:** `vite`, `esbuild`, `tailwindcss`, `typescript`.
 
+### Market Data Integration
+
+**Provider:** Massive.com (formerly Polygon.io) - provides real-time options data with Greeks.
+**Endpoints Used:**
+- `/v3/snapshot/options/{underlyingAsset}` - Options chain snapshot with Greeks (delta, gamma, theta, vega), implied volatility, last quote, open interest.
+- `/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}` - Stock price snapshots for underlying asset prices.
+**Free Tier Limits:** 5 API calls per minute.
+**User Configuration:** Users add their Massive.com API key in Account Settings page. Key is stored per-user in the database.
+**Data Available:** Price data (bid, ask, last, midpoint), Greeks (delta, gamma, theta, vega), implied volatility, break-even price, open interest, underlying price.
+
 ### Database Configuration
 
 **ORM:** Drizzle ORM with PostgreSQL dialect via `@neondatabase/serverless` driver.
