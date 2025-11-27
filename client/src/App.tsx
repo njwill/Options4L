@@ -335,12 +335,10 @@ function AppContent() {
                 <p className="text-xs text-muted-foreground">Track strategies, rolls, and P/L</p>
               </div>
               <div className="flex items-center gap-2">
-                <Button 
-                  variant="ghost" 
-                  onClick={() => setActiveTab('dashboard')}
-                  data-testid="button-home-nav"
-                >
-                  Home
+                <Button variant="ghost" asChild data-testid="link-home">
+                  <a href="https://www.options4l.com" target="_blank" rel="noopener noreferrer">
+                    Home
+                  </a>
                 </Button>
                 <Button variant="ghost" asChild data-testid="link-instructions">
                   <a href="https://youtu.be/W59dDyb_tyw" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
