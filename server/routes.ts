@@ -530,6 +530,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     legId: string; // Unique identifier to match back to frontend
   }
 
+  // Yahoo Finance crumb cache (crumbs typically last a few hours)
+  let yahooCrumb: { value: string; cookies: string; timestamp: number } | null = null;
+  const CRUMB_TTL = 30 * 60 * 1000; // 30 minutes
+
+  async function getYahooCrumb(): Promise<{ crumb: string; cookies: string } | null> {
+    // Return cached crumb if still valid
+    if (yahooCrumb && Date.now() - yahooCrumb.timestamp < CRUMB_TTL) {
+      return { crumb: yahooCrumb.value, cookies: yahooCrumb.cookies };
+    }
+
+    try {
+      // Step 1: Get cookies from fc.yahoo.com
+      const fcResponse = await fetch('https://fc.yahoo.com', {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+      
+      // Get cookies from response
+      const setCookies = fcResponse.headers.get('set-cookie') || '';
+      
+      // Step 2: Get crumb using the cookies
+      const crumbResponse = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Cookie': setCookies,
+        },
+      });
+      
+      if (!crumbResponse.ok) {
+        console.error('[Yahoo] Failed to get crumb:', crumbResponse.status);
+        return null;
+      }
+      
+      const crumb = await crumbResponse.text();
+      if (!crumb || crumb.includes('<!DOCTYPE')) {
+        console.error('[Yahoo] Invalid crumb response');
+        return null;
+      }
+      
+      // Cache the crumb
+      yahooCrumb = {
+        value: crumb.trim(),
+        cookies: setCookies,
+        timestamp: Date.now(),
+      };
+      
+      console.log('[Yahoo] Got fresh crumb');
+      return { crumb: yahooCrumb.value, cookies: yahooCrumb.cookies };
+    } catch (err) {
+      console.error('[Yahoo] Error getting crumb:', err);
+      return null;
+    }
+  }
+
   app.post('/api/options/chain', async (req, res) => {
     try {
       if (!req.user) {
@@ -636,6 +693,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[Yahoo] Fetching options for ${limitedSymbols.length} symbols`);
 
+      // Get Yahoo crumb for authentication
+      const yahooAuth = await getYahooCrumb();
+      if (!yahooAuth) {
+        return res.status(503).json({ 
+          success: false, 
+          message: 'Unable to connect to Yahoo Finance. Please try again in a moment.',
+        });
+      }
+
       // Process each symbol
       for (const symbol of limitedSymbols) {
         const legsForSymbol = symbolGroups[symbol];
@@ -645,11 +711,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const baseUrl = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}`;
           console.log(`[Yahoo] Fetching available expirations for ${symbol}`);
           
-          const baseResponse = await fetch(baseUrl, {
+          const baseResponse = await fetch(`${baseUrl}?crumb=${encodeURIComponent(yahooAuth.crumb)}`, {
             method: 'GET',
             headers: {
               'Accept': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (compatible; OptionsAnalyzer/1.0)',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Cookie': yahooAuth.cookies,
             },
           });
           
@@ -701,14 +768,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Step 3: Fetch options chain for each unique expiration
           for (const [expTimestamp, legsForExp] of Object.entries(expirationToLegs)) {
             const expNum = parseInt(expTimestamp);
-            const url = `${baseUrl}?date=${expNum}`;
+            const url = `${baseUrl}?date=${expNum}&crumb=${encodeURIComponent(yahooAuth.crumb)}`;
             console.log(`[Yahoo] Fetching ${symbol} exp ${new Date(expNum * 1000).toISOString().split('T')[0]}`);
             
             const response = await fetch(url, {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (compatible; OptionsAnalyzer/1.0)',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cookie': yahooAuth.cookies,
               },
             });
             
