@@ -217,7 +217,7 @@ export type UploadResponse = z.infer<typeof uploadResponseSchema>;
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   nostrPubkey: varchar("nostr_pubkey", { length: 64 }).unique(),
-  email: varchar("email", { length: 255 }).unique(),
+  email: varchar("email", { length: 255 }),  // Unique constraint handled via partial index
   emailVerified: boolean("email_verified").default(false),
   displayName: varchar("display_name", { length: 100 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),

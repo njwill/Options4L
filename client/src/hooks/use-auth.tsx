@@ -2,7 +2,8 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 
 interface User {
   id: number;
-  nostrPubkey: string;
+  nostrPubkey: string | null;
+  email: string | null;
   displayName: string | null;
 }
 
@@ -10,6 +11,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (signedEvent: any) => Promise<void>;
+  loginWithEmail: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -61,6 +63,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(newUser);
   };
 
+  const loginWithEmail = async (token: string) => {
+    const verifyResponse = await fetch('/api/auth/email/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ token }),
+    });
+
+    if (!verifyResponse.ok) {
+      const error = await verifyResponse.json();
+      throw new Error(error.error || 'Email verification failed');
+    }
+
+    const { user: newUser } = await verifyResponse.json();
+    setUser(newUser);
+  };
+
   const logout = async () => {
     await fetch('/api/auth/logout', {
       method: 'POST',
@@ -74,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, loginWithEmail, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

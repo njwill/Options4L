@@ -6,11 +6,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Upload, ExternalLink, Key } from 'lucide-react';
+import { Route, Switch, useLocation, useSearch } from 'wouter';
 import Dashboard from '@/pages/Dashboard';
 import OpenPositions from '@/pages/OpenPositions';
 import ClosedPositions from '@/pages/ClosedPositions';
 import TransactionHistory from '@/pages/TransactionHistory';
 import AccountSettings from '@/pages/AccountSettings';
+import { EmailVerify } from '@/pages/EmailVerify';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { LoginModal } from '@/components/LoginModal';
 import { UserMenu } from '@/components/UserMenu';
@@ -467,10 +469,29 @@ function AppContent() {
   );
 }
 
+// Component to handle email verification route
+function EmailVerifyRoute() {
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const token = params.get('token') || '';
+  
+  return (
+    <EmailVerify 
+      token={token} 
+      onComplete={() => setLocation('/')} 
+    />
+  );
+}
+
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <Switch>
+        <Route path="/auth/verify" component={EmailVerifyRoute} />
+        <Route path="/" component={AppContent} />
+        <Route component={AppContent} />
+      </Switch>
     </AuthProvider>
   );
 }
