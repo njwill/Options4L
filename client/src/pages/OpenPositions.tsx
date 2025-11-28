@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Activity } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, RefreshCw, AlertCircle, X, Activity } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
@@ -484,16 +484,8 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
           <div className="flex flex-col">
             <span className="font-medium">{row.symbol}</span>
             {quote && (
-              <div className="flex items-center gap-1 text-xs">
-                <span className="tabular-nums">${quote.price.toFixed(2)}</span>
-                <span className={`flex items-center ${parseFloat(quote.changePercent) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {parseFloat(quote.changePercent) >= 0 ? (
-                    <TrendingUp className="w-3 h-3" />
-                  ) : (
-                    <TrendingDown className="w-3 h-3" />
-                  )}
-                  {quote.changePercent}%
-                </span>
+              <div className="text-xs text-muted-foreground tabular-nums">
+                ${quote.price.toFixed(2)}
               </div>
             )}
           </div>
