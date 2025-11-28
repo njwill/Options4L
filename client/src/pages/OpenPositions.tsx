@@ -12,7 +12,7 @@ import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
-import { usePriceCache } from '@/hooks/use-price-cache';
+import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -413,6 +413,29 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       hasData: legsData.some(l => l.data && !l.data.error),
     };
   };
+  
+  // Helper to get live P/L for a position using cached prices
+  const getLivePositionPL = (position: Position): number | null => {
+    // Build cached prices object for this position from optionData
+    const positionPrices: Record<string, OptionLegData> = {};
+    
+    if (position.legs && Array.isArray(position.legs)) {
+      position.legs.forEach((_, i) => {
+        const legId = `${position.id}-leg-${i}`;
+        const data = optionData[legId];
+        if (data) {
+          positionPrices[legId] = data;
+        }
+      });
+    }
+    
+    // Only calculate if we have any cached prices
+    if (Object.keys(positionPrices).length === 0) {
+      return null;
+    }
+    
+    return calculateLivePositionPL(position as any, positionPrices as any);
+  };
 
   const columns: Column<Position>[] = [
     {
@@ -489,6 +512,31 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         </span>
       ),
       sortValue: (row) => row.netPL,
+      className: 'text-right',
+    },
+    {
+      key: 'livePL',
+      header: 'Live P/L',
+      accessor: (row) => {
+        const livePL = getLivePositionPL(row);
+        
+        if (livePL === null) {
+          return <span className="text-muted-foreground text-sm" data-testid={`live-pl-${row.id}`}>—</span>;
+        }
+        
+        return (
+          <span 
+            className={`font-semibold tabular-nums ${livePL >= 0 ? 'text-green-600' : 'text-red-600'}`}
+            data-testid={`live-pl-${row.id}`}
+          >
+            {formatCurrency(livePL)}
+          </span>
+        );
+      },
+      sortValue: (row) => {
+        const livePL = getLivePositionPL(row);
+        return livePL ?? 0;
+      },
       className: 'text-right',
     },
     {
@@ -651,13 +699,26 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     const totalCredit = filteredPositions.reduce((sum, p) => sum + p.totalCredit, 0);
     const totalDebit = filteredPositions.reduce((sum, p) => sum + p.totalDebit, 0);
     const netPL = filteredPositions.reduce((sum, p) => sum + p.netPL, 0);
+    
+    // Calculate total live P/L
+    let totalLivePL: number | null = null;
+    let hasAnyLiveData = false;
+    
+    for (const pos of filteredPositions) {
+      const livePL = getLivePositionPL(pos);
+      if (livePL !== null) {
+        hasAnyLiveData = true;
+        totalLivePL = (totalLivePL ?? 0) + livePL;
+      }
+    }
 
     return {
       totalCredit,
       totalDebit,
       netPL,
+      livePL: hasAnyLiveData ? totalLivePL : null,
     };
-  }, [filteredPositions]);
+  }, [filteredPositions, optionData]);
 
   const footer = [
     <span className="font-semibold">Totals</span>,
@@ -668,8 +729,15 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     <span className={`font-semibold tabular-nums ${totals.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
       {formatCurrency(totals.netPL)}
     </span>,
+    totals.livePL !== null ? (
+      <span className={`font-semibold tabular-nums ${totals.livePL >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid="total-live-pl">
+        {formatCurrency(totals.livePL)}
+      </span>
+    ) : (
+      <span className="text-muted-foreground text-sm">—</span>
+    ),
     '', // Roll Chain
-    '', // Greeks
+    '', // Live Prices
     ...(isAuthenticated ? [''] : []),
   ];
 

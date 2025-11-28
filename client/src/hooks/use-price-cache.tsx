@@ -125,6 +125,43 @@ export function usePriceCache() {
 }
 
 /**
+ * Get the best available price from option data
+ * Priority: mark > mid-price (bid+ask)/2 > last > bid or ask
+ * Returns { price, isValid } - isValid is true if we got valid API data
+ */
+function getBestPrice(priceData: LegPriceData): { price: number; isValid: boolean } {
+  // Use mark if valid
+  if (priceData.mark && priceData.mark > 0) {
+    return { price: priceData.mark, isValid: true };
+  }
+  
+  // Fall back to mid-price if bid and ask are available
+  const bid = (priceData as any).bid || 0;
+  const ask = (priceData as any).ask || 0;
+  if (bid > 0 && ask > 0) {
+    return { price: (bid + ask) / 2, isValid: true };
+  }
+  
+  // Fall back to last price
+  const last = (priceData as any).last || 0;
+  if (last > 0) {
+    return { price: last, isValid: true };
+  }
+  
+  // Fall back to whichever is available
+  if (ask > 0) return { price: ask, isValid: true };
+  if (bid > 0) return { price: bid, isValid: true };
+  
+  // If we have price data but all prices are 0, the option is worthless
+  // This is valid data - the option is just worth $0
+  const hasAnyPriceData = priceData.mark !== undefined || 
+                          (priceData as any).bid !== undefined || 
+                          (priceData as any).ask !== undefined;
+  
+  return { price: 0, isValid: hasAnyPriceData };
+}
+
+/**
  * Calculate live unrealized P/L for a position based on cached prices
  * Returns null if no valid price data is available
  */
@@ -145,15 +182,18 @@ export function calculateLivePositionPL(
     const legId = `${position.id}-leg-${index}`;
     const priceData = cachedPrices[legId];
     
-    if (priceData?.mark && priceData.mark > 0) {
-      hasValidData = true;
-      const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
-      const currentPrice = priceData.mark;
-      const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
-      const unrealizedPL = isSell 
-        ? (entryPrice - currentPrice) * leg.quantity * 100
-        : (currentPrice - entryPrice) * leg.quantity * 100;
-      totalPL += unrealizedPL;
+    if (priceData) {
+      const { price: currentPrice, isValid } = getBestPrice(priceData);
+      
+      if (isValid) {
+        hasValidData = true;
+        const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
+        const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
+        const unrealizedPL = isSell 
+          ? (entryPrice - currentPrice) * leg.quantity * 100
+          : (currentPrice - entryPrice) * leg.quantity * 100;
+        totalPL += unrealizedPL;
+      }
     }
   });
   
