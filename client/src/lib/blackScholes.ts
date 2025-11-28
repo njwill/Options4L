@@ -52,6 +52,11 @@ export function calculateGreeks(input: GreeksInput): GreeksResult | null {
     if (!strikePrice || strikePrice <= 0) return null;
     if (!impliedVolatility || impliedVolatility <= 0) return null;
 
+    // Normalize IV: Yahoo Finance returns IV as a decimal (e.g., 0.30 for 30%)
+    // but some sources may return as percentage (30 for 30%). 
+    // If IV > 3 (300%), assume it's in percentage form and convert.
+    const normalizedIV = impliedVolatility > 3 ? impliedVolatility / 100 : impliedVolatility;
+
     const daysToExpiration = calculateDaysToExpiration(expirationDate);
     
     if (daysToExpiration <= 0) {
@@ -68,7 +73,7 @@ export function calculateGreeks(input: GreeksInput): GreeksResult | null {
         priceDiff: 0,
         priceDiffPercent: 0,
         daysToExpiration: 0,
-        impliedVolatility,
+        impliedVolatility: normalizedIV,
       };
     }
 
@@ -76,7 +81,7 @@ export function calculateGreeks(input: GreeksInput): GreeksResult | null {
 
     const option = bs.option({
       rate: riskFreeRate,
-      sigma: impliedVolatility,
+      sigma: normalizedIV,
       strike: strikePrice,
       time: timeToExpiration,
       type: optionType,
@@ -100,7 +105,7 @@ export function calculateGreeks(input: GreeksInput): GreeksResult | null {
       priceDiff,
       priceDiffPercent,
       daysToExpiration,
-      impliedVolatility,
+      impliedVolatility: normalizedIV,
     };
   } catch (error) {
     console.error('Black-Scholes calculation error:', error);
