@@ -63,6 +63,26 @@ Preferred communication style: Simple, everyday language.
 **Data Available:** Price data (bid, ask, last, mark), implied volatility, volume, open interest, underlying price.
 **Note:** Greeks (delta, gamma, theta, vega) are not available through Yahoo Finance free API.
 
+### Live Position Valuation
+
+**Open Positions Table Columns:**
+- **Close Value**: Current market value to close the position (mark × quantity × multiplier)
+- **Unrealized P/L**: Net entry cost plus current close value
+
+**Calculation Logic:**
+- Option legs: Uses mark price from optionData cache with 100x multiplier
+- Stock legs: Uses price from liveQuotes cache with 1x multiplier, falls back to underlyingPrice from option data
+- Partial data: Yellow indicator when some legs lack pricing; values not shown to avoid misleading users
+- No data: "--" displayed when no legs have valid prices
+- Complete data: Green indicator with calculated values
+
+**Price Resolution Chain for Stock Legs:**
+1. liveQuotes[leg.symbol]
+2. liveQuotes[position.symbol]
+3. optionData[any-leg].underlyingPrice (fallback from cached option data)
+
+**Known Limitation:** Stock-only positions and mixed positions with stock legs whose symbol differs from position.symbol may show "Partial" if the refresh pipeline hasn't fetched quotes for all unique leg symbols.
+
 ### Database Configuration
 
 **ORM:** Drizzle ORM with PostgreSQL dialect via `@neondatabase/serverless` driver.
