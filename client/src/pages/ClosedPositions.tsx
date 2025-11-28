@@ -20,9 +20,10 @@ interface ClosedPositionsProps {
   positions: Position[];
   rollChains: RollChain[];
   onUngroupPosition?: (groupId: string) => Promise<void>;
+  onDataChange?: () => Promise<boolean>;
 }
 
-export default function ClosedPositions({ positions, rollChains, onUngroupPosition }: ClosedPositionsProps) {
+export default function ClosedPositions({ positions, rollChains, onUngroupPosition, onDataChange }: ClosedPositionsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
@@ -136,8 +137,10 @@ export default function ClosedPositions({ positions, rollChains, onUngroupPositi
             title: 'Position ungrouped',
             description: data.message || 'The position has been split into separate legs.',
           });
-          // Invalidate queries to refresh the data
-          queryClient.invalidateQueries({ queryKey: ['/api/analyze'] });
+          // Refresh data to show updated positions
+          if (onDataChange) {
+            await onDataChange();
+          }
         } else {
           throw new Error(data.message || 'Failed to ungroup position');
         }
@@ -176,8 +179,10 @@ export default function ClosedPositions({ positions, rollChains, onUngroupPositi
           title: 'Auto-grouping restored',
           description: data.message || 'The position will be auto-grouped again.',
         });
-        // Invalidate queries to refresh the data
-        queryClient.invalidateQueries({ queryKey: ['/api/analyze'] });
+        // Refresh data to show updated positions
+        if (onDataChange) {
+          await onDataChange();
+        }
       } else {
         throw new Error(data.message || 'Failed to restore auto-grouping');
       }

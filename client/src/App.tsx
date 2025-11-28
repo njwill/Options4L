@@ -425,8 +425,8 @@ function AppContent() {
                   summary={summary}
                 />
               )}
-              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} />}
-              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} />}
+              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={loadUserData} />}
+              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={loadUserData} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
               {activeTab === 'account' && <AccountSettings onDataChange={() => {
                 if (user) {
