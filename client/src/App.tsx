@@ -358,8 +358,8 @@ function AppContent() {
       throw new Error(data.message || 'Failed to ungroup position');
     }
 
-    // Reload user data to reflect the ungrouping
-    await loadUserData();
+    // Reload user data to reflect the ungrouping (without changing tab)
+    await refreshData();
   };
 
   const tabs = [
