@@ -1423,6 +1423,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Ungroup an auto-grouped position by creating individual manual groupings for each leg
+  // This forces each leg to be treated as its own position
+  app.post('/api/ungroup-position', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { legs, transactionIds } = req.body;
+      
+      if (!legs || !Array.isArray(legs) || legs.length < 2) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'At least 2 legs are required to ungroup' 
+        });
+      }
+
+      if (!transactionIds || !Array.isArray(transactionIds) || transactionIds.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Transaction IDs are required to ungroup' 
+        });
+      }
+
+      // Load all user transactions to compute hashes and get details
+      const allTransactions = await loadUserTransactions(req.user.id);
+      
+      // Build transactionId to transaction mapping for the position's transactions
+      const positionTxns = allTransactions.filter(txn => transactionIds.includes(txn.id));
+      
+      if (positionTxns.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Could not find transactions for this position' 
+        });
+      }
+
+      // Group transactions by leg key (symbol + strike + expiration + optionType)
+      // Include ALL transactions (opening and closing) for each leg
+      const legGroups = new Map<string, { txns: typeof positionTxns; transCode: string; optionType: string }>();
+      
+      // First pass: identify leg keys from opening transactions
+      for (const txn of positionTxns) {
+        const option = txn.option || {};
+        if (!option.strike || !option.expiration || !option.optionType) continue;
+        
+        const legKey = `${option.symbol || txn.instrument}|${option.strike}|${option.expiration}|${option.optionType}`;
+        
+        // Get the opening transCode if this is an opening transaction
+        const isOpening = txn.transCode === 'STO' || txn.transCode === 'BTO';
+        
+        if (!legGroups.has(legKey)) {
+          legGroups.set(legKey, { 
+            txns: [], 
+            transCode: isOpening ? txn.transCode : 'Unknown',
+            optionType: option.optionType 
+          });
+        } else if (isOpening && legGroups.get(legKey)!.transCode === 'Unknown') {
+          // Update transCode if we found the opening transaction
+          legGroups.get(legKey)!.transCode = txn.transCode;
+        }
+        
+        // Add ALL transactions (opening, closing, expired, assigned) for this leg
+        legGroups.get(legKey)!.txns.push(txn);
+      }
+
+      if (legGroups.size < 2) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Could not identify multiple legs to ungroup. Need at least 2 distinct option legs.' 
+        });
+      }
+
+      // Create individual manual groupings for each leg group
+      const groupIds: string[] = [];
+      
+      for (const [legKey, group] of Array.from(legGroups.entries())) {
+        // Compute hashes for this leg's transactions
+        const legHashes = group.txns.map((txn: typeof positionTxns[number]) => computeTransactionHash(txn));
+        
+        if (legHashes.length === 0) continue;
+        
+        // Determine single-leg strategy type based on transCode and optionType
+        let strategyType = 'Unknown';
+        const isBuy = group.transCode === 'BTO';
+        const isCall = group.optionType.toLowerCase() === 'call';
+        
+        if (isBuy && isCall) strategyType = 'Long Call';
+        else if (isBuy && !isCall) strategyType = 'Long Put';
+        else if (!isBuy && isCall) strategyType = 'Short Call';
+        else if (!isBuy && !isCall) strategyType = 'Short Put';
+        
+        const groupId = await createManualGrouping(req.user.id, legHashes, strategyType);
+        groupIds.push(groupId);
+      }
+
+      if (groupIds.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'No valid legs found to ungroup' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        groupIds,
+        message: `Position ungrouped into ${groupIds.length} separate legs`,
+      });
+    } catch (error) {
+      console.error('Ungroup position error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to ungroup position',
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

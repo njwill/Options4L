@@ -185,23 +185,61 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   };
   
   const handleUngroupPosition = async (pos: Position) => {
-    if (!pos.manualGroupId || !onUngroupPosition) return;
+    // Handle manually grouped positions (use existing API)
+    if (pos.manualGroupId && onUngroupPosition) {
+      setUngroupingId(pos.manualGroupId);
+      try {
+        await onUngroupPosition(pos.manualGroupId);
+        toast({
+          title: 'Position ungrouped',
+          description: 'The position has been ungrouped. Transactions will be re-analyzed.',
+        });
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Failed to ungroup position',
+          variant: 'destructive',
+        });
+      } finally {
+        setUngroupingId(null);
+      }
+      return;
+    }
     
-    setUngroupingId(pos.manualGroupId);
-    try {
-      await onUngroupPosition(pos.manualGroupId);
-      toast({
-        title: 'Position ungrouped',
-        description: 'The position has been ungrouped. Transactions will be re-analyzed.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to ungroup position',
-        variant: 'destructive',
-      });
-    } finally {
-      setUngroupingId(null);
+    // Handle auto-grouped positions (use new API)
+    if (pos.legs && pos.legs.length >= 2) {
+      setUngroupingId(pos.id);
+      try {
+        const response = await apiRequest('POST', '/api/ungroup-position', {
+          legs: pos.legs.map(leg => ({
+            transactionId: leg.transactionId,
+            transCode: leg.transCode,
+            optionType: leg.optionType,
+          })),
+          transactionIds: pos.transactionIds,
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          toast({
+            title: 'Position ungrouped',
+            description: data.message || 'The position has been split into separate legs.',
+          });
+          // Invalidate queries to refresh the data
+          queryClient.invalidateQueries({ queryKey: ['/api/analyze'] });
+        } else {
+          throw new Error(data.message || 'Failed to ungroup position');
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Failed to ungroup position',
+          variant: 'destructive',
+        });
+      } finally {
+        setUngroupingId(null);
+      }
     }
   };
   
@@ -850,7 +888,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                 </span>
               )}
             </Button>
-            {row.isManuallyGrouped && row.manualGroupId && (
+            {row.legs && row.legs.length >= 2 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -861,14 +899,14 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                       e.stopPropagation();
                       handleUngroupPosition(row);
                     }}
-                    disabled={ungroupingId === row.manualGroupId}
+                    disabled={ungroupingId === row.manualGroupId || ungroupingId === row.id}
                     data-testid={`button-ungroup-position-${row.id}`}
                   >
                     <Unlink className="h-4 w-4 text-muted-foreground" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Ungroup this manually grouped position</p>
+                  <p>{row.isManuallyGrouped ? 'Ungroup this manually grouped position' : 'Split this multi-leg position into separate legs'}</p>
                 </TooltipContent>
               </Tooltip>
             )}
