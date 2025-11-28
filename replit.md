@@ -62,7 +62,22 @@ Preferred communication style: Simple, everyday language.
 **Rate Limits:** Reasonable use, no strict API key requirement.
 **User Configuration:** No API key needed - works automatically for authenticated users.
 **Data Available:** Price data (bid, ask, last, mark), implied volatility, volume, open interest, underlying price.
-**Note:** Greeks (delta, gamma, theta, vega) are not available through Yahoo Finance free API.
+
+### Greeks Calculation
+
+**Library:** `@uqee/black-scholes` for Black-Scholes model calculations.
+**Client-side Calculation:** Greeks are calculated in the browser using live price data and implied volatility from Yahoo Finance.
+**Utility Module:** `client/src/lib/blackScholes.ts` provides:
+- `calculateGreeks()`: Computes per-contract Greeks (delta, gamma, theta, vega, rho, theoretical price)
+- `calculatePositionGreeks()`: Aggregates position-level Greeks with scaling (×100 × quantity × sign)
+**Position Greeks Units:**
+- Delta ($): Dollar P/L per $1 underlying move
+- Gamma: Position delta change per $1 underlying move (in delta units)
+- Theta ($/day): Dollar time decay per day
+- Vega ($/%IV): Dollar P/L per 1% IV change
+**Per-leg Greeks:** Raw Black-Scholes values displayed with Greek symbols (Δ, Γ, Θ, ν)
+**Risk-free Rate:** Hardcoded at 4.5% (0.045), may need updating based on market conditions.
+**Display Locations:** Open Positions table tooltips, Position Detail panel Greeks section, per-leg Greeks in leg cards.
 
 ### Database Configuration
 
