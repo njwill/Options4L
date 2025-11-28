@@ -272,6 +272,82 @@ router.post('/email/verify', async (req: Request, res: Response) => {
 });
 
 // ============================================================================
+// Development-Only Login (for testing)
+// ============================================================================
+
+const DEV_TEST_EMAIL = 'test@test.com';
+
+/**
+ * POST /api/auth/dev-login
+ * Development-only instant login for testing purposes
+ * Only works in development mode with the test email
+ * 
+ * Body: {
+ *   email: string (must be test@test.com)
+ * }
+ */
+router.post('/dev-login', async (req: Request, res: Response) => {
+  // CRITICAL: Only allow in development mode
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  
+  try {
+    const { email: rawEmail } = req.body as { email: string };
+    
+    if (!rawEmail || typeof rawEmail !== 'string') {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    const email = rawEmail.trim().toLowerCase();
+    
+    // Only allow the specific test email
+    if (email !== DEV_TEST_EMAIL) {
+      return res.status(403).json({ 
+        error: 'Dev login only works with test@test.com' 
+      });
+    }
+    
+    // Find or create user by email (same as regular email verify)
+    const dbUser = await findOrCreateUserByEmail(email);
+    
+    // Convert to AuthUser format
+    const authUser: AuthUser = {
+      id: dbUser.id,
+      nostrPubkey: dbUser.nostrPubkey,
+      email: dbUser.email,
+      displayName: dbUser.displayName,
+    };
+    
+    // Generate JWT token
+    const jwtToken = generateToken(authUser);
+    
+    // Set httpOnly cookie
+    res.cookie('auth_token', jwtToken, {
+      httpOnly: true,
+      secure: false, // Always false for dev login
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    
+    console.log('[DEV] Dev login successful for:', email);
+    
+    res.json({
+      success: true,
+      user: {
+        id: authUser.id,
+        nostrPubkey: authUser.nostrPubkey,
+        email: authUser.email,
+        displayName: authUser.displayName,
+      },
+    });
+  } catch (error) {
+    console.error('Dev login error:', error);
+    res.status(500).json({ error: 'Dev login failed' });
+  }
+});
+
+// ============================================================================
 // Account Linking Routes
 // ============================================================================
 

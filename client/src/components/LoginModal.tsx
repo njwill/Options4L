@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Key, AlertCircle, ExternalLink, CheckCircle, Mail, ArrowLeft } from 'lucide-react';
+import { Loader2, Key, AlertCircle, ExternalLink, CheckCircle, Mail, ArrowLeft, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 
 interface LoginModalProps {
@@ -25,7 +25,7 @@ type AuthMethod = 'nostr' | 'email';
 type EmailStep = 'input' | 'sent';
 
 export function LoginModal({ open, onOpenChange }: LoginModalProps) {
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasNostrExtension, setHasNostrExtension] = useState(false);
@@ -185,6 +185,38 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
   const handleBackToEmailInput = () => {
     setEmailStep('input');
     setError(null);
+  };
+
+  // Development-only instant login (bypasses magic link)
+  const handleDevLogin = async () => {
+    if (!import.meta.env.DEV) return;
+    
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/auth/dev-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: 'test@test.com' }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Dev login failed');
+      }
+
+      // Refresh user from server (cookie was already set by dev-login endpoint)
+      await refreshUser();
+      onOpenChange(false);
+    } catch (err) {
+      console.error('Dev login error:', err);
+      setError(err instanceof Error ? err.message : 'Dev login failed');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -358,6 +390,35 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
                 <p className="text-xs text-muted-foreground text-center">
                   The link expires in 15 minutes.
                 </p>
+
+                {/* Development-only instant login button */}
+                {import.meta.env.DEV && (
+                  <div className="pt-4 border-t border-dashed">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleDevLogin}
+                      disabled={isLoading}
+                      className="w-full border-yellow-500/50 text-yellow-600 hover:bg-yellow-500/10"
+                      data-testid="button-dev-login"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Logging in...
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-4 h-4 mr-2" />
+                          Dev Login (test@test.com)
+                        </>
+                      )}
+                    </Button>
+                    <p className="text-xs text-yellow-600/70 text-center mt-1">
+                      Development only - bypasses email verification
+                    </p>
+                  </div>
+                )}
               </>
             ) : (
               <>
