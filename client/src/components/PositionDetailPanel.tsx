@@ -6,15 +6,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { StrategyBadge } from './StrategyBadge';
 import { RollChainTimeline } from './RollChainTimeline';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { apiRequest } from '@/lib/queryClient';
-import { useAuth } from '@/hooks/use-auth';
-import { usePriceCache, LegPriceData } from '@/hooks/use-price-cache';
-import { RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { usePriceCache } from '@/hooks/use-price-cache';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface PositionDetailPanelProps {
   position: Position | null;
@@ -24,65 +21,12 @@ interface PositionDetailPanelProps {
 }
 
 export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: PositionDetailPanelProps) {
-  const { user } = useAuth();
-  const isAuthenticated = !!user;
-  const { getPositionPrices, setPositionPrices, hasPositionPrices } = usePriceCache();
-  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
-  const [priceError, setPriceError] = useState<string | null>(null);
+  const { getPositionPrices } = usePriceCache();
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
 
   const legPrices = position ? (getPositionPrices(position.id) || {}) : {};
 
-  const fetchLegPrices = async () => {
-    if (!position || !isAuthenticated || position.status !== 'open') return;
-    
-    const hasOpenLegs = position.legs.some(leg => leg.status === 'open');
-    if (!hasOpenLegs) return;
-    
-    setIsLoadingPrices(true);
-    setPriceError(null);
-    
-    try {
-      const legRequests: { symbol: string; strike: number; expiration: string; type: 'call' | 'put'; legId: string }[] = [];
-      
-      position.legs.forEach((leg, index) => {
-        if (leg.status === 'open') {
-          legRequests.push({
-            symbol: position.symbol,
-            strike: leg.strike,
-            expiration: leg.expiration,
-            type: leg.optionType.toLowerCase() as 'call' | 'put',
-            legId: `${position.id}-leg-${index}`,
-          });
-        }
-      });
-      
-      const response = await apiRequest('POST', '/api/options/chain', { legs: legRequests });
-      const data = await response.json();
-      
-      if (data.success && data.optionData) {
-        setPositionPrices(position.id, data.optionData);
-      } else if (data.message) {
-        setPriceError(data.message);
-      }
-    } catch (error) {
-      console.error('Failed to fetch leg prices:', error);
-      setPriceError('Failed to fetch live prices');
-    } finally {
-      setIsLoadingPrices(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen && position && position.status === 'open' && isAuthenticated) {
-      if (!hasPositionPrices(position.id)) {
-        setPriceError(null);
-        setTotalUnrealizedPL(null);
-        fetchLegPrices();
-      }
-    }
-  }, [isOpen, position?.id, isAuthenticated, hasPositionPrices]);
-
+  // Calculate total unrealized P/L from cached prices
   useEffect(() => {
     if (!position || Object.keys(legPrices).length === 0) {
       setTotalUnrealizedPL(null);
@@ -194,9 +138,6 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
           {/* Option Legs */}
           <div>
             <h3 className="text-lg font-semibold mb-4">Option Legs</h3>
-            {priceError && (
-              <p className="text-sm text-destructive mb-2">{priceError}</p>
-            )}
             <div className="space-y-2">
               {position.legs.map((leg, index) => {
                 const legId = `${position.id}-leg-${index}`;
@@ -249,9 +190,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
                       <div className="mt-3 py-2 px-3 rounded bg-muted/50 flex items-center justify-between">
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span>Current:</span>
-                          {isLoadingPrices ? (
-                            <span className="animate-pulse">Loading...</span>
-                          ) : currentPrice && currentPrice > 0 ? (
+                          {currentPrice && currentPrice > 0 ? (
                             <span className="font-medium text-foreground">{formatCurrency(currentPrice)}</span>
                           ) : priceData?.error ? (
                             <span className="text-destructive">{priceData.error}</span>
