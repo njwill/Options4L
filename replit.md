@@ -66,10 +66,15 @@ Preferred communication style: Simple, everyday language.
 ### Greeks Calculation
 
 **Library:** `@uqee/black-scholes` for Black-Scholes model calculations.
-**Client-side Calculation:** Greeks are calculated in the browser using live price data and implied volatility from Yahoo Finance.
+**Client-side Calculation:** Greeks are calculated in the browser using live price data. Implied volatility is computed via Newton-Raphson solver.
 **Utility Module:** `client/src/lib/blackScholes.ts` provides:
+- `solveImpliedVolatility()`: Newton-Raphson IV solver from market price (primary source)
 - `calculateGreeks()`: Computes per-contract Greeks (delta, gamma, theta, vega, rho, theoretical price)
 - `calculatePositionGreeks()`: Aggregates position-level Greeks with scaling (×100 × quantity × sign)
+**IV Calculation Priority:**
+1. **Calculated (calc):** Newton-Raphson solver using market price, underlying price, strike, time to expiry
+2. **Yahoo Fallback:** Normalized Yahoo Finance IV if solver fails
+3. **Default Fallback:** 30% IV if no other source available
 **Position Greeks Units:**
 - Delta ($): Dollar P/L per $1 underlying move
 - Gamma: Position delta change per $1 underlying move (in delta units)
@@ -78,6 +83,7 @@ Preferred communication style: Simple, everyday language.
 **Per-leg Greeks:** Raw Black-Scholes values displayed with Greek symbols (Δ, Γ, Θ, ν)
 **Risk-free Rate:** Hardcoded at 4.5% (0.045), may need updating based on market conditions.
 **Display Locations:** Open Positions table tooltips, Position Detail panel Greeks section, per-leg Greeks in leg cards.
+**IV Source Indicator:** UI shows "(calc)" next to IV when calculated via Newton-Raphson.
 
 ### Database Configuration
 
