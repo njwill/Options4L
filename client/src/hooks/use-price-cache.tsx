@@ -27,6 +27,8 @@ interface PriceCacheContextType {
   clearPositionPrices: (positionId: string) => void;
   clearAllPrices: () => void;
   hasPositionPrices: (positionId: string) => boolean;
+  lastRefreshTime: Date | null;
+  setLastRefreshTime: (time: Date) => void;
 }
 
 const PriceCacheContext = createContext<PriceCacheContextType | null>(null);
@@ -34,7 +36,12 @@ const PriceCacheContext = createContext<PriceCacheContextType | null>(null);
 export function LivePriceCacheProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [cache, setCache] = useState<Record<string, PositionPriceCache>>({});
+  const [lastRefreshTime, setLastRefreshTimeState] = useState<Date | null>(null);
   const prevUserIdRef = useRef<number | undefined>(undefined);
+
+  const setLastRefreshTime = useCallback((time: Date) => {
+    setLastRefreshTimeState(time);
+  }, []);
 
   const getPositionPrices = useCallback((positionId: string): Record<string, LegPriceData> | null => {
     return cache[positionId]?.prices || null;
@@ -60,6 +67,7 @@ export function LivePriceCacheProvider({ children }: { children: React.ReactNode
 
   const clearAllPrices = useCallback(() => {
     setCache({});
+    setLastRefreshTimeState(null);
   }, []);
 
   const hasPositionPrices = useCallback((positionId: string): boolean => {
@@ -84,6 +92,8 @@ export function LivePriceCacheProvider({ children }: { children: React.ReactNode
       clearPositionPrices,
       clearAllPrices,
       hasPositionPrices,
+      lastRefreshTime,
+      setLastRefreshTime,
     }}>
       {children}
     </PriceCacheContext.Provider>

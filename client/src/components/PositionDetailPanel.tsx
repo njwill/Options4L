@@ -193,21 +193,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
 
           {/* Option Legs */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Option Legs</h3>
-              {position.status === 'open' && isAuthenticated && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={fetchLegPrices}
-                  disabled={isLoadingPrices}
-                  data-testid="button-refresh-leg-prices"
-                >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingPrices ? 'animate-spin' : ''}`} />
-                  {isLoadingPrices ? 'Loading...' : 'Refresh Prices'}
-                </Button>
-              )}
-            </div>
+            <h3 className="text-lg font-semibold mb-4">Option Legs</h3>
             {priceError && (
               <p className="text-sm text-destructive mb-2">{priceError}</p>
             )}

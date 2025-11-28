@@ -71,12 +71,11 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const [optionData, setOptionData] = useState<Record<string, OptionLegData>>({});
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
   const [quotesError, setQuotesError] = useState<string | null>(null);
-  const [lastQuoteUpdate, setLastQuoteUpdate] = useState<Date | null>(null);
   
   const { user } = useAuth();
   const isAuthenticated = !!user;
   const { toast } = useToast();
-  const { setPositionPrices, getPositionPrices } = usePriceCache();
+  const { setPositionPrices, getPositionPrices, lastRefreshTime, setLastRefreshTime } = usePriceCache();
 
   const openPositions = positions.filter((p) => p.status === 'open');
   
@@ -327,7 +326,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         setLiveQuotes(allQuotes);
       }
       
-      setLastQuoteUpdate(new Date());
+      setLastRefreshTime(new Date());
       
       const symbolCount = uniqueSymbols.length;
       const legCount = legRequests.length;
@@ -708,9 +707,9 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                 )}
               </TooltipContent>
             </Tooltip>
-            {lastQuoteUpdate && (
+            {lastRefreshTime && (
               <span className="text-xs text-muted-foreground">
-                Updated {format(lastQuoteUpdate, 'h:mm a')}
+                Updated {format(lastRefreshTime, 'h:mm a')}
               </span>
             )}
             {quotesError && (
