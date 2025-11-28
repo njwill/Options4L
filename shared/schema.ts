@@ -179,6 +179,7 @@ export const positionSchema = z.object({
   rolledToPositionId: z.string().nullable(), // Next position in chain
   isManuallyGrouped: z.boolean().optional(), // True if this position was created via manual grouping
   manualGroupId: z.string().nullable().optional(), // The groupId for manual groupings (used for ungrouping)
+  originAutoGroupHash: z.string().nullable().optional(), // Hash of original auto-grouped position (for restore feature)
 });
 
 export type Position = z.infer<typeof positionSchema>;

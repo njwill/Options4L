@@ -44,6 +44,7 @@ interface PositionRecord {
   transactionIds: string[];
   isManuallyGrouped?: boolean;
   manualGroupId?: string | null;
+  originAutoGroupHash?: string | null; // Hash of original auto-grouped position (for restore feature)
 }
 
 interface AnomalyRecord {
@@ -56,6 +57,7 @@ export interface ManualGrouping {
   groupId: string;
   transactionHashes: string[];
   strategyType: string;
+  originAutoGroupHash?: string | null; // Hash of original auto-grouped position (for restore feature)
 }
 
 export function buildPositions(
@@ -364,6 +366,7 @@ function applyManualGroupings(
     groupId: string;
     txnIds: string[];
     strategyType: string;
+    originAutoGroupHash: string | null;
   }> = [];
 
   manualGroupings.forEach((grouping) => {
@@ -382,6 +385,7 @@ function applyManualGroupings(
         groupId: grouping.groupId,
         txnIds,
         strategyType: grouping.strategyType,
+        originAutoGroupHash: grouping.originAutoGroupHash || null,
       });
     }
   });
@@ -411,7 +415,7 @@ function applyManualGroupings(
   const manuallyGroupedPositions: PositionRecord[] = [];
   const processedPositionIds = new Set<string>();
 
-  groupedPositionData.forEach(({ groupId, txnIds, strategyType }) => {
+  groupedPositionData.forEach(({ groupId, txnIds, strategyType, originAutoGroupHash }) => {
     // Find all positions that contain any of these transaction IDs
     const matchingPositions: PositionRecord[] = [];
     txnIds.forEach((txnId) => {
@@ -455,6 +459,7 @@ function applyManualGroupings(
       transactionIds: allTxnIds,
       isManuallyGrouped: true, // Mark this position as manually grouped
       manualGroupId: groupId, // Store the groupId for ungrouping
+      originAutoGroupHash, // Store origin hash for restore feature
     };
 
     manuallyGroupedPositions.push(mergedPosition);
@@ -638,6 +643,7 @@ function convertToPosition(record: PositionRecord): Position {
     rolledToPositionId: null,
     isManuallyGrouped: record.isManuallyGrouped || false,
     manualGroupId: record.manualGroupId || null,
+    originAutoGroupHash: record.originAutoGroupHash || null,
   };
 }
 

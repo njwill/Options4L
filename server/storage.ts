@@ -548,20 +548,37 @@ export async function getManualGroupingsByGroupId(
 
 /**
  * Get manual groupings in the format expected by positionBuilder
- * Returns an array of { groupId, transactionHashes, strategyType }
+ * Returns an array of { groupId, transactionHashes, strategyType, originAutoGroupHash }
  */
 export async function getManualGroupingsForPositionBuilder(
   userId: string
-): Promise<Array<{ groupId: string; transactionHashes: string[]; strategyType: string }>> {
-  const groupingsMap = await getManualGroupingsByGroupId(userId);
+): Promise<Array<{ groupId: string; transactionHashes: string[]; strategyType: string; originAutoGroupHash: string | null }>> {
+  const groupings = await getManualGroupings(userId);
   
-  const result: Array<{ groupId: string; transactionHashes: string[]; strategyType: string }> = [];
+  // Group by groupId and collect all data
+  const groupMap = new Map<string, { transactionHashes: string[]; strategyType: string; originAutoGroupHash: string | null }>();
   
-  groupingsMap.forEach((value, groupId) => {
+  for (const g of groupings) {
+    const existing = groupMap.get(g.groupId);
+    if (existing) {
+      existing.transactionHashes.push(g.transactionHash);
+    } else {
+      groupMap.set(g.groupId, {
+        transactionHashes: [g.transactionHash],
+        strategyType: g.strategyType,
+        originAutoGroupHash: g.originAutoGroupHash,
+      });
+    }
+  }
+  
+  const result: Array<{ groupId: string; transactionHashes: string[]; strategyType: string; originAutoGroupHash: string | null }> = [];
+  
+  groupMap.forEach((value, groupId) => {
     result.push({
       groupId,
       transactionHashes: value.transactionHashes,
       strategyType: value.strategyType,
+      originAutoGroupHash: value.originAutoGroupHash,
     });
   });
   

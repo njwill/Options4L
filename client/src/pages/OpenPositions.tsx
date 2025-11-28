@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink, RefreshCw, AlertCircle, X, Activity } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, RefreshCw, AlertCircle, X, Activity, Redo2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
@@ -74,6 +74,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const [selectedPositionDesc, setSelectedPositionDesc] = useState('');
   const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
   const [ungroupingId, setUngroupingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   
   // Live price state
   const [liveQuotes, setLiveQuotes] = useState<Record<string, StockQuote>>({});
@@ -240,6 +241,45 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       } finally {
         setUngroupingId(null);
       }
+    }
+  };
+
+  const handleRestoreAutoGrouping = async (pos: Position) => {
+    if (!pos.originAutoGroupHash) {
+      toast({
+        title: 'Cannot restore',
+        description: 'This position was not created from an ungroup operation.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRestoringId(pos.id);
+    try {
+      const response = await apiRequest('POST', '/api/restore-auto-grouping', {
+        originAutoGroupHash: pos.originAutoGroupHash,
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: 'Auto-grouping restored',
+          description: data.message || 'The position will be auto-grouped again.',
+        });
+        // Invalidate queries to refresh the data
+        queryClient.invalidateQueries({ queryKey: ['/api/analyze'] });
+      } else {
+        throw new Error(data.message || 'Failed to restore auto-grouping');
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to restore auto-grouping',
+        variant: 'destructive',
+      });
+    } finally {
+      setRestoringId(null);
     }
   };
   
@@ -888,7 +928,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                 </span>
               )}
             </Button>
-            {row.legs && row.legs.length >= 2 && (
+            {row.legs && row.legs.length >= 2 && !row.originAutoGroupHash && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -907,6 +947,28 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>{row.isManuallyGrouped ? 'Ungroup this manually grouped position' : 'Split this multi-leg position into separate legs'}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {row.originAutoGroupHash && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRestoreAutoGrouping(row);
+                    }}
+                    disabled={restoringId === row.id}
+                    data-testid={`button-restore-position-${row.id}`}
+                  >
+                    <Redo2 className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Restore auto-grouping (undo ungroup)</p>
                 </TooltipContent>
               </Tooltip>
             )}

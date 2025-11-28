@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { createHash } from "crypto";
 import multer from "multer";
 import { parseFile, consolidateTransactions } from "./utils/csvParser";
 import { buildPositions, calculateSummary } from "./utils/positionBuilder";
