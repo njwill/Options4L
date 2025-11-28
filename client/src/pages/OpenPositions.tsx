@@ -764,7 +764,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                     data-testid="button-refresh-quotes"
                   >
                     <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
-                    {isLoadingQuotes ? 'Loading...' : 'Refresh Prices'}
+                    {isLoadingQuotes ? 'Loading...' : lastRefreshTime ? 'Refresh Prices' : 'Get Live Prices'}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
