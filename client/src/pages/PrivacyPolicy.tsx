@@ -19,7 +19,7 @@ export default function PrivacyPolicy() {
         <Card data-testid="card-privacy-policy">
           <CardHeader>
             <CardTitle className="text-3xl">Privacy Policy</CardTitle>
-            <p className="text-sm text-muted-foreground">Last updated: November 27, 2025</p>
+            <p className="text-sm text-muted-foreground">Last updated: November 28, 2025</p>
           </CardHeader>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none space-y-6">
             <section>
@@ -67,11 +67,35 @@ export default function PrivacyPolicy() {
                 <li><strong>Authentication:</strong> Verify your identity and maintain your session</li>
                 <li><strong>Data Persistence:</strong> Store your data so you can access it across sessions (authenticated users only)</li>
                 <li><strong>Email Delivery:</strong> Send magic link authentication emails when you choose email login</li>
+                <li><strong>Live Market Data:</strong> Fetch current options prices for your open positions (see Third-Party Services below)</li>
               </ul>
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">4. Data Storage and Security</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">4. Third-Party Services</h2>
+              
+              <h3 className="text-lg font-medium mt-4 mb-2">Yahoo Finance (Live Options Pricing)</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                To display live prices for your open option positions, we send requests to Yahoo Finance's publicly available API. 
+                When you view live prices, the following information is sent to Yahoo Finance:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+                <li>Stock/ETF symbols (e.g., SPY, QQQ, AAPL)</li>
+                <li>Option strike prices and expiration dates</li>
+                <li>Option type (call or put)</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                This data is sent directly from your browser to Yahoo Finance. We do not store or log these requests on our servers. 
+                Yahoo Finance's use of this data is governed by their own privacy policy.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Note:</strong> No personal information, account details, trade quantities, or cost basis is shared with Yahoo Finance—only 
+                the option contract identifiers needed to retrieve current market prices.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mt-6 mb-3">5. Data Storage and Security</h2>
               
               <h3 className="text-lg font-medium mt-4 mb-2">Anonymous Users</h3>
               <p className="text-muted-foreground leading-relaxed">
@@ -95,7 +119,7 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">5. Data Sharing</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">6. Data Sharing</h2>
               <p className="text-muted-foreground leading-relaxed font-medium">
                 We do not sell, rent, or share your personal information or trading data with third parties.
               </p>
@@ -109,17 +133,25 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">6. Your Rights and Choices</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">7. Your Rights and Choices</h2>
               <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
                 <li><strong>Access:</strong> You can view all your data through the application interface</li>
                 <li><strong>Export:</strong> You can export your transaction data as CSV at any time</li>
                 <li><strong>Deletion:</strong> You can delete individual uploads or request complete account deletion</li>
                 <li><strong>Anonymous Use:</strong> You can use the tool without creating an account</li>
+                <li><strong>Account Linking:</strong> You can link both NOSTR and email authentication to a single account for flexible login options</li>
               </ul>
+
+              <h3 className="text-lg font-medium mt-4 mb-2">Account Linking and Merging</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                You may link multiple authentication methods (NOSTR and email) to a single account. If you attempt to link an authentication 
+                method that is already associated with a different account, you will be offered the option to merge accounts. Merging transfers 
+                all data (transactions, positions, comments) from the existing account to your current account and deletes the old account.
+              </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">7. Cookies</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">8. Cookies</h2>
               <p className="text-muted-foreground leading-relaxed">
                 We use only essential cookies required for the application to function:
               </p>
@@ -133,7 +165,7 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">8. Data Retention</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">9. Data Retention</h2>
               <p className="text-muted-foreground leading-relaxed">
                 For authenticated users, we retain your data until you delete it or request account deletion. 
                 Server logs are retained for a limited period for security and debugging purposes.
@@ -141,7 +173,7 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">9. Children's Privacy</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">10. Children's Privacy</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Options4L is not intended for use by individuals under 18 years of age. 
                 We do not knowingly collect personal information from children.
@@ -149,14 +181,14 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">10. Changes to This Policy</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">11. Changes to This Policy</h2>
               <p className="text-muted-foreground leading-relaxed">
                 We may update this Privacy Policy from time to time. We will notify users of any material changes by updating the "Last updated" date at the top of this policy.
               </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">11. Open Source</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">12. Open Source</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Options4L is open source software. You can review exactly how your data is handled by examining the source code at{' '}
                 <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
@@ -166,7 +198,7 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">12. Contact</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">13. Contact</h2>
               <p className="text-muted-foreground leading-relaxed">
                 If you have questions about this Privacy Policy or your data, please open an issue on our{' '}
                 <a href="https://github.com/njwill/Options4L/issues" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
