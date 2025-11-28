@@ -1,12 +1,20 @@
 import { Card } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, BarChart3, Target } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart3, Target, Zap } from 'lucide-react';
 import type { SummaryStats } from '@shared/schema';
+
+interface LivePLData {
+  liveOpenPL: number;
+  liveTotalPL: number;
+  realizedPL: number;
+  hasLiveData: boolean;
+}
 
 interface SummaryCardsProps {
   stats: SummaryStats;
+  livePLData?: LivePLData | null;
 }
 
-export function SummaryCards({ stats }: SummaryCardsProps) {
+export function SummaryCards({ stats, livePLData }: SummaryCardsProps) {
   const formatCurrency = (value: number) => {
     const formatted = new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -20,22 +28,29 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
     return `${value.toFixed(1)}%`;
   };
 
+  // Use live P/L values when available, otherwise fall back to static stats
+  const hasLiveData = livePLData?.hasLiveData ?? false;
+  const totalPL = hasLiveData ? livePLData!.liveTotalPL : stats.totalPL;
+  const realizedPL = hasLiveData ? livePLData!.realizedPL : stats.realizedPL;
+
   const cards = [
     {
-      label: 'Total P/L (realized + unrealized)',
-      value: formatCurrency(stats.totalPL),
-      icon: stats.totalPL >= 0 ? TrendingUp : TrendingDown,
-      iconColor: stats.totalPL >= 0 ? 'text-green-600' : 'text-red-600',
-      valueColor: stats.totalPL >= 0 ? 'text-green-600' : 'text-red-600',
-      testId: 'card-total-pl'
+      label: hasLiveData ? 'Total P/L (live)' : 'Total P/L (realized + unrealized)',
+      value: formatCurrency(totalPL),
+      icon: totalPL >= 0 ? TrendingUp : TrendingDown,
+      iconColor: totalPL >= 0 ? 'text-green-600' : 'text-red-600',
+      valueColor: totalPL >= 0 ? 'text-green-600' : 'text-red-600',
+      testId: 'card-total-pl',
+      isLive: hasLiveData,
     },
     {
       label: 'Total P/L (realized)',
-      value: formatCurrency(stats.realizedPL),
-      icon: stats.realizedPL >= 0 ? TrendingUp : TrendingDown,
-      iconColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
-      valueColor: stats.realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
-      testId: 'card-realized-pl'
+      value: formatCurrency(realizedPL),
+      icon: realizedPL >= 0 ? TrendingUp : TrendingDown,
+      iconColor: realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
+      valueColor: realizedPL >= 0 ? 'text-green-600' : 'text-red-600',
+      testId: 'card-realized-pl',
+      isLive: false,
     },
     {
       label: 'Open Positions',
@@ -43,7 +58,8 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
       icon: Target,
       iconColor: 'text-primary',
       valueColor: 'text-foreground',
-      testId: 'card-open-positions'
+      testId: 'card-open-positions',
+      isLive: false,
     },
     {
       label: 'Win Rate',
@@ -52,7 +68,8 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
       icon: BarChart3,
       iconColor: 'text-chart-1',
       valueColor: 'text-foreground',
-      testId: 'card-win-rate'
+      testId: 'card-win-rate',
+      isLive: false,
     },
   ];
 
@@ -62,7 +79,12 @@ export function SummaryCards({ stats }: SummaryCardsProps) {
         <Card key={card.label} className="p-4" data-testid={card.testId}>
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1">
-              <p className="text-sm font-medium text-muted-foreground mb-1">{card.label}</p>
+              <div className="flex items-center gap-1.5 mb-1">
+                <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
+                {card.isLive && (
+                  <Zap className="w-3 h-3 text-yellow-500" />
+                )}
+              </div>
               <p className={`text-3xl font-semibold tabular-nums ${card.valueColor}`} data-testid={`${card.testId}-value`}>
                 {card.value}
               </p>

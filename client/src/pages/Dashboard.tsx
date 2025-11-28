@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { FileUpload } from '@/components/FileUpload';
 import { SummaryCards } from '@/components/SummaryCards';
 import { PLOverTimeChart } from '@/components/PLOverTimeChart';
@@ -6,8 +6,10 @@ import { StrategyPerformanceChart } from '@/components/StrategyPerformanceChart'
 import { DataTable, type Column } from '@/components/DataTable';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
+import { usePriceCache, calculateTotalLivePL } from '@/hooks/use-price-cache';
 import type { Position, Transaction, RollChain, SummaryStats } from '@shared/schema';
 import { format } from 'date-fns';
+import { RefreshCw } from 'lucide-react';
 
 interface DashboardProps {
   positions: Position[];
@@ -20,6 +22,16 @@ interface DashboardProps {
 
 export default function Dashboard({ positions, transactions, rollChains, onFileUpload, isProcessing, summary }: DashboardProps) {
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const { getAllCachedPrices, hasCachedPrices, lastRefreshTime } = usePriceCache();
+
+  // Calculate live P/L using cached prices when available
+  const livePLData = useMemo(() => {
+    if (!hasCachedPrices()) {
+      return null;
+    }
+    const allPrices = getAllCachedPrices();
+    return calculateTotalLivePL(positions, allPrices);
+  }, [positions, getAllCachedPrices, hasCachedPrices]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -137,15 +149,23 @@ export default function Dashboard({ positions, transactions, rollChains, onFileU
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold mb-2">Dashboard</h1>
-        <p className="text-muted-foreground">Overview of your trading performance and recent activity</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold mb-2">Dashboard</h1>
+          <p className="text-muted-foreground">Overview of your trading performance and recent activity</p>
+        </div>
+        {lastRefreshTime && livePLData?.hasLiveData && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <RefreshCw className="w-3 h-3" />
+            <span>Live prices from {format(lastRefreshTime, 'h:mm a')}</span>
+          </div>
+        )}
       </div>
 
-      <SummaryCards stats={summary} />
+      <SummaryCards stats={summary} livePLData={livePLData} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <PLOverTimeChart positions={positions} />
+        <PLOverTimeChart positions={positions} livePLData={livePLData} />
         <StrategyPerformanceChart positions={positions} />
       </div>
 

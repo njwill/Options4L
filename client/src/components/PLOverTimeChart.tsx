@@ -4,19 +4,30 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import type { Position } from '@shared/schema';
 import { format } from 'date-fns';
 
-interface PLOverTimeChartProps {
-  positions: Position[];
+interface LivePLData {
+  liveOpenPL: number;
+  liveTotalPL: number;
+  realizedPL: number;
+  hasLiveData: boolean;
 }
 
-export function PLOverTimeChart({ positions }: PLOverTimeChartProps) {
+interface PLOverTimeChartProps {
+  positions: Position[];
+  livePLData?: LivePLData | null;
+}
+
+export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps) {
   const chartData = useMemo(() => {
     const closedPositions = positions
       .filter((p) => p.status === 'closed' && p.exitDate)
       .sort((a, b) => new Date(a.exitDate!).getTime() - new Date(b.exitDate!).getTime());
 
     // Calculate total unrealized P/L from open positions
+    // Use live P/L if available, otherwise fall back to static values
     const openPositions = positions.filter((p) => p.status === 'open');
-    const unrealizedPL = openPositions.reduce((sum, p) => sum + p.netPL, 0);
+    const unrealizedPL = livePLData?.hasLiveData 
+      ? livePLData.liveOpenPL 
+      : openPositions.reduce((sum, p) => sum + p.netPL, 0);
 
     let cumulativeRealizedPL = 0;
     const dataPoints = closedPositions.map((position) => {
@@ -55,12 +66,12 @@ export function PLOverTimeChart({ positions }: PLOverTimeChartProps) {
         positionPL: 0,
         unrealizedPL: Number(unrealizedPL.toFixed(2)),
         symbol: 'Open Positions',
-        strategy: 'Current Unrealized' as any,
+        strategy: livePLData?.hasLiveData ? 'Live Unrealized' : 'Current Unrealized' as any,
       });
     }
 
     return dataPoints;
-  }, [positions]);
+  }, [positions, livePLData]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
