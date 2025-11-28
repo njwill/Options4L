@@ -10,12 +10,21 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle, X } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Activity } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { 
+  calculateGreeks, 
+  calculatePositionGreeks, 
+  type GreeksResult,
+  formatDelta,
+  formatGamma,
+  formatTheta,
+  formatVega
+} from '@/lib/blackScholes';
 
 interface StockQuote {
   symbol: string;
@@ -393,24 +402,52 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     return rollChains.find((chain) => chain.chainId === position.rollChainId) || null;
   };
 
-  // Helper to get aggregated Greeks for a position's legs
+  // Helper to get aggregated Greeks for a position's legs with Black-Scholes calculations
   const getPositionGreeks = (position: Position): {
-    legs: { legId: string; data: OptionLegData | null; legInfo: any }[];
+    legs: { legId: string; data: OptionLegData | null; legInfo: any; greeks: GreeksResult | null }[];
     hasData: boolean;
+    positionGreeks: { totalDelta: number; totalGamma: number; totalTheta: number; totalVega: number } | null;
   } => {
-    const legsData: { legId: string; data: OptionLegData | null; legInfo: any }[] = [];
+    const legsData: { legId: string; data: OptionLegData | null; legInfo: any; greeks: GreeksResult | null }[] = [];
     
     if (position.legs && Array.isArray(position.legs)) {
       position.legs.forEach((leg, i) => {
         const legId = `${position.id}-leg-${i}`;
         const data = optionData[legId] || null;
-        legsData.push({ legId, data, legInfo: leg });
+        
+        let greeks: GreeksResult | null = null;
+        if (data && !data.error && data.underlyingPrice && data.impliedVolatility && leg.expiration) {
+          const mark = data.mark || ((data.bid + data.ask) / 2);
+          greeks = calculateGreeks({
+            underlyingPrice: data.underlyingPrice,
+            strikePrice: leg.strike,
+            expirationDate: leg.expiration,
+            optionType: (leg.optionType?.toLowerCase() || 'call') as 'call' | 'put',
+            impliedVolatility: data.impliedVolatility,
+            marketPrice: mark,
+          });
+        }
+        
+        legsData.push({ legId, data, legInfo: leg, greeks });
       });
+    }
+    
+    // Calculate position-level Greeks
+    let positionGreeks = null;
+    const legsWithGreeks = legsData.filter(l => l.greeks).map(l => ({
+      greeks: l.greeks!,
+      quantity: l.legInfo.quantity || 1,
+      transCode: l.legInfo.transCode || 'BTO',
+    }));
+    
+    if (legsWithGreeks.length > 0) {
+      positionGreeks = calculatePositionGreeks(legsWithGreeks);
     }
     
     return {
       legs: legsData,
       hasData: legsData.some(l => l.data && !l.data.error),
+      positionGreeks,
     };
   };
   
@@ -546,18 +583,75 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       header: 'Live P/L',
       accessor: (row) => {
         const livePL = getLivePositionPL(row);
+        const greeksInfo = getPositionGreeks(row);
         
         if (livePL === null) {
           return <span className="text-muted-foreground text-sm" data-testid={`live-pl-${row.id}`}>—</span>;
         }
         
-        return (
+        const plElement = (
           <span 
-            className={`font-semibold tabular-nums ${livePL >= 0 ? 'text-green-600' : 'text-red-600'}`}
+            className={`font-semibold tabular-nums ${livePL >= 0 ? 'text-green-600' : 'text-red-600'} ${greeksInfo.positionGreeks ? 'cursor-help underline decoration-dotted decoration-muted-foreground/50' : ''}`}
             data-testid={`live-pl-${row.id}`}
           >
             {formatCurrency(livePL)}
           </span>
+        );
+        
+        if (!greeksInfo.positionGreeks) {
+          return plElement;
+        }
+        
+        const { totalDelta, totalGamma, totalTheta, totalVega } = greeksInfo.positionGreeks;
+        
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center gap-1">
+                {plElement}
+                <Activity className="w-3 h-3 text-muted-foreground" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="w-56 p-3" data-testid="tooltip-position-greeks">
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Activity className="w-3 h-3" />
+                  Position Greeks
+                </div>
+                
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Delta ($)</span>
+                    <span className={`font-mono tabular-nums ${totalDelta >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {totalDelta >= 0 ? '+' : ''}{totalDelta.toFixed(0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Gamma</span>
+                    <span className="font-mono tabular-nums">
+                      {totalGamma >= 0 ? '+' : ''}{totalGamma.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Theta ($/day)</span>
+                    <span className={`font-mono tabular-nums ${totalTheta >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {totalTheta >= 0 ? '+' : ''}${totalTheta.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Vega ($/%IV)</span>
+                    <span className="font-mono tabular-nums">
+                      {totalVega >= 0 ? '+' : ''}${totalVega.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-t pt-2 mt-2 text-[10px] text-muted-foreground">
+                  <p>Delta = P/L per $1 move. Gamma = delta change per $1. Theta = daily time decay. Vega = P/L per 1% IV move.</p>
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
         );
       },
       sortValue: (row) => {
@@ -605,13 +699,15 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         
         return (
           <div className="flex flex-col gap-0.5">
-            {greeksInfo.legs.map(({ legId, data, legInfo }) => {
+            {greeksInfo.legs.map(({ legId, data, legInfo, greeks }) => {
               if (!data || data.error) {
                 return null;
               }
               
               const legLabel = `${legInfo.strike}${legInfo.optionType?.[0]?.toUpperCase() || ''}`;
               const mark = data.mark || ((data.bid + data.ask) / 2);
+              const isShort = legInfo.transCode === 'STO' || legInfo.transCode === 'STC';
+              const quantity = legInfo.quantity || 1;
               
               return (
                 <Tooltip key={legId}>
@@ -621,29 +717,106 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
                       <span className="tabular-nums font-medium">
                         ${mark.toFixed(2)}
                       </span>
-                      {data.impliedVolatility && (
+                      {greeks && (
                         <span className="tabular-nums text-muted-foreground ml-1">
-                          IV:{(data.impliedVolatility * 100).toFixed(0)}%
+                          Δ:{formatDelta(greeks.delta)}
                         </span>
                       )}
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <div className="text-sm space-y-1">
-                      <div className="font-medium mb-2">
+                  <TooltipContent className="w-72 p-3" data-testid="tooltip-leg-greeks">
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium mb-2">
                         {data.symbol} ${data.strike} {data.type?.toUpperCase()} {data.expiration}
                       </div>
+                      
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                         <div>Bid: <span className="tabular-nums">${(data.bid || 0).toFixed(2)}</span></div>
                         <div>Ask: <span className="tabular-nums">${(data.ask || 0).toFixed(2)}</span></div>
                         <div>Mark: <span className="tabular-nums font-medium">${mark.toFixed(2)}</span></div>
                         <div>Last: <span className="tabular-nums">${(data.last || 0).toFixed(2)}</span></div>
                       </div>
-                      {data.impliedVolatility && (
+                      
+                      {greeks && (
+                        <div className="border-t pt-2 mt-2">
+                          <div className="text-[10px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Activity className="w-3 h-3" />
+                            Black-Scholes Greeks
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            <div>
+                              <span className="text-muted-foreground text-[10px] block">Per Contract</span>
+                              <div className="space-y-0.5 mt-1">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Δ</span>
+                                  <span className="font-mono tabular-nums">{formatDelta(greeks.delta)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Γ</span>
+                                  <span className="font-mono tabular-nums">{formatGamma(greeks.gamma)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Θ</span>
+                                  <span className={`font-mono tabular-nums ${greeks.theta < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                    {formatTheta(greeks.theta)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">ν</span>
+                                  <span className="font-mono tabular-nums">{formatVega(greeks.vega)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground text-[10px] block">
+                                Position ({isShort ? 'Short' : 'Long'} {quantity})
+                              </span>
+                              <div className="space-y-0.5 mt-1">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">$Δ</span>
+                                  <span className={`font-mono tabular-nums ${(greeks.delta * quantity * 100 * (isShort ? -1 : 1)) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {(greeks.delta * quantity * 100 * (isShort ? -1 : 1)).toFixed(0)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">$Θ/day</span>
+                                  <span className={`font-mono tabular-nums ${(greeks.theta * quantity * 100 * (isShort ? -1 : 1)) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    ${(greeks.theta * quantity * 100 * (isShort ? -1 : 1)).toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-2 mt-2 pt-1 border-t text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">IV</span>
+                              <span className="font-mono tabular-nums">{(greeks.impliedVolatility * 100).toFixed(1)}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">DTE</span>
+                              <span className="font-mono tabular-nums">{Math.round(greeks.daysToExpiration)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Theo</span>
+                              <span className="font-mono tabular-nums">${greeks.theoreticalPrice.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Diff</span>
+                              <span className={`font-mono tabular-nums ${greeks.priceDiff > 0 ? 'text-amber-500' : greeks.priceDiff < 0 ? 'text-green-500' : ''}`}>
+                                {greeks.priceDiffPercent >= 0 ? '+' : ''}{greeks.priceDiffPercent.toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!greeks && data.impliedVolatility && (
                         <div className="border-t pt-1 mt-1 text-xs">
                           IV: <span className="tabular-nums font-medium">{(data.impliedVolatility * 100).toFixed(1)}%</span>
                         </div>
                       )}
+                      
                       <div className="border-t pt-1 mt-1 text-xs text-muted-foreground">
                         Vol: {(data.volume || 0).toLocaleString()} | OI: {(data.openInterest || 0).toLocaleString()}
                       </div>

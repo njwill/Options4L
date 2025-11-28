@@ -153,7 +153,7 @@ export function getGreekExplanation(greek: string): string {
 
 export function calculatePositionGreeks(
   legs: Array<{
-    greeks: GreeksResult | null;
+    greeks: GreeksResult;
     quantity: number;
     transCode: string;
   }>
@@ -169,8 +169,6 @@ export function calculatePositionGreeks(
   let totalVega = 0;
 
   legs.forEach(leg => {
-    if (!leg.greeks) return;
-    
     const multiplier = leg.quantity * 100;
     const isShort = leg.transCode === 'STO' || leg.transCode === 'STC';
     const sign = isShort ? -1 : 1;

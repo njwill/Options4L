@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,12 +6,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StrategyBadge } from './StrategyBadge';
 import { RollChainTimeline } from './RollChainTimeline';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
 import { usePriceCache } from '@/hooks/use-price-cache';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle } from 'lucide-react';
+import { 
+  calculateGreeks, 
+  calculatePositionGreeks, 
+  type GreeksResult,
+  formatDelta,
+  formatGamma,
+  formatTheta,
+  formatVega
+} from '@/lib/blackScholes';
 
 interface PositionDetailPanelProps {
   position: Position | null;
@@ -25,6 +35,57 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
 
   const legPrices = position ? (getPositionPrices(position.id) || {}) : {};
+
+  // Calculate Greeks for each leg
+  const legGreeks = useMemo(() => {
+    if (!position) return {};
+    
+    const greeksMap: Record<string, GreeksResult | null> = {};
+    
+    position.legs.forEach((leg, index) => {
+      const legId = `${position.id}-leg-${index}`;
+      const priceData = legPrices[legId];
+      
+      if (priceData && priceData.underlyingPrice && priceData.impliedVolatility && leg.expiration) {
+        const mark = priceData.mark || ((priceData.bid || 0) + (priceData.ask || 0)) / 2;
+        const greeks = calculateGreeks({
+          underlyingPrice: priceData.underlyingPrice,
+          strikePrice: leg.strike,
+          expirationDate: leg.expiration,
+          optionType: (leg.optionType?.toLowerCase() || 'call') as 'call' | 'put',
+          impliedVolatility: priceData.impliedVolatility,
+          marketPrice: mark,
+        });
+        greeksMap[legId] = greeks;
+      } else {
+        greeksMap[legId] = null;
+      }
+    });
+    
+    return greeksMap;
+  }, [position, legPrices]);
+
+  // Calculate position-level Greeks
+  const positionGreeks = useMemo(() => {
+    if (!position) return null;
+    
+    const legsWithGreeks = position.legs
+      .map((leg, index) => {
+        const legId = `${position.id}-leg-${index}`;
+        const greeks = legGreeks[legId];
+        if (!greeks) return null;
+        return {
+          greeks,
+          quantity: leg.quantity || 1,
+          transCode: leg.transCode || 'BTO',
+        };
+      })
+      .filter((l): l is NonNullable<typeof l> => l !== null);
+    
+    if (legsWithGreeks.length === 0) return null;
+    
+    return calculatePositionGreeks(legsWithGreeks);
+  }, [position, legGreeks]);
 
   // Calculate total unrealized P/L from cached prices
   useEffect(() => {
@@ -135,6 +196,94 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
             )}
           </div>
 
+          {/* Position Greeks Section */}
+          {positionGreeks && position.status === 'open' && (
+            <div className="p-4 border rounded-md bg-muted/30">
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="w-4 h-4 text-primary" />
+                <h3 className="font-semibold">Position Greeks</h3>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p className="text-xs">Greeks show your position's sensitivity to market changes. Delta/Theta/Vega are in dollars. Gamma shows how delta changes.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-xs text-muted-foreground mb-1 cursor-help flex items-center gap-1">
+                        Delta ($Δ)
+                        <HelpCircle className="w-3 h-3" />
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">Expected P/L change for a $1 move in the underlying stock. Positive = bullish, Negative = bearish.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <p className={`font-semibold tabular-nums ${positionGreeks.totalDelta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {positionGreeks.totalDelta >= 0 ? '+' : ''}{positionGreeks.totalDelta.toFixed(0)}
+                  </p>
+                </div>
+                
+                <div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-xs text-muted-foreground mb-1 cursor-help flex items-center gap-1">
+                        Gamma
+                        <HelpCircle className="w-3 h-3" />
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">Position delta change per $1 underlying move. E.g., gamma of +5 means delta increases by 5 per $1 up move.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <p className="font-semibold tabular-nums">
+                    {positionGreeks.totalGamma >= 0 ? '+' : ''}{positionGreeks.totalGamma.toFixed(2)}
+                  </p>
+                </div>
+                
+                <div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-xs text-muted-foreground mb-1 cursor-help flex items-center gap-1">
+                        Theta ($Θ/day)
+                        <HelpCircle className="w-3 h-3" />
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">Daily time decay. Negative = losing money each day, Positive = gaining (if you sold options).</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <p className={`font-semibold tabular-nums ${positionGreeks.totalTheta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {positionGreeks.totalTheta >= 0 ? '+' : ''}${positionGreeks.totalTheta.toFixed(2)}
+                  </p>
+                </div>
+                
+                <div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <p className="text-xs text-muted-foreground mb-1 cursor-help flex items-center gap-1">
+                        Vega ($ν)
+                        <HelpCircle className="w-3 h-3" />
+                      </p>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">P/L change per 1% change in implied volatility. Positive = benefits from rising IV.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <p className="font-semibold tabular-nums">
+                    {positionGreeks.totalVega >= 0 ? '+' : ''}${positionGreeks.totalVega.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Option Legs */}
           <div>
             <h3 className="text-lg font-semibold mb-4">Option Legs</h3>
@@ -142,13 +291,13 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
               {position.legs.map((leg, index) => {
                 const legId = `${position.id}-leg-${index}`;
                 const priceData = legPrices[legId];
+                const greeks = legGreeks[legId];
                 const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
                 const currentPrice = priceData?.mark;
                 const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
                 
                 let unrealizedPL: number | null = null;
                 if (currentPrice && currentPrice > 0 && leg.status === 'open') {
-                  // Short positions profit when price drops, long positions profit when price rises
                   unrealizedPL = isSell 
                     ? (entryPrice - currentPrice) * leg.quantity * 100
                     : (currentPrice - entryPrice) * leg.quantity * 100;
@@ -187,27 +336,102 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
                     
                     {/* Current price and P/L row for open legs */}
                     {leg.status === 'open' && (
-                      <div className="mt-3 py-2 px-3 rounded bg-muted/50 flex items-center justify-between">
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>Current:</span>
-                          {currentPrice && currentPrice > 0 ? (
-                            <span className="font-medium text-foreground">{formatCurrency(currentPrice)}</span>
-                          ) : priceData?.error ? (
-                            <span className="text-destructive">{priceData.error}</span>
-                          ) : (
-                            <span>—</span>
-                          )}
-                          {currentPrice && currentPrice > 0 && (
-                            <>
-                              <span>vs Entry:</span>
-                              <span className="font-medium text-foreground">{formatCurrency(entryPrice)}</span>
-                            </>
+                      <div className="mt-3 py-2 px-3 rounded bg-muted/50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span>Current:</span>
+                            {currentPrice && currentPrice > 0 ? (
+                              <span className="font-medium text-foreground">{formatCurrency(currentPrice)}</span>
+                            ) : priceData?.error ? (
+                              <span className="text-destructive">{priceData.error}</span>
+                            ) : (
+                              <span>—</span>
+                            )}
+                            {currentPrice && currentPrice > 0 && (
+                              <>
+                                <span>vs Entry:</span>
+                                <span className="font-medium text-foreground">{formatCurrency(entryPrice)}</span>
+                              </>
+                            )}
+                          </div>
+                          {unrealizedPL !== null && (
+                            <div className={`flex items-center gap-1 text-sm font-semibold ${unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {unrealizedPL > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : unrealizedPL < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
+                              <span>{formatCurrency(unrealizedPL)}</span>
+                            </div>
                           )}
                         </div>
-                        {unrealizedPL !== null && (
-                          <div className={`flex items-center gap-1 text-sm font-semibold ${unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {unrealizedPL > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : unrealizedPL < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
-                            <span>{formatCurrency(unrealizedPL)}</span>
+                        
+                        {/* Per-leg Greeks */}
+                        {greeks && (
+                          <div className="mt-2 pt-2 border-t border-border/50">
+                            <div className="flex items-center gap-1 text-[10px] text-muted-foreground mb-1">
+                              <Activity className="w-3 h-3" />
+                              Greeks
+                            </div>
+                            <div className="flex flex-wrap gap-3 text-xs">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-help">
+                                    <span className="text-muted-foreground">Δ:</span>{' '}
+                                    <span className="font-mono tabular-nums">{formatDelta(greeks.delta)}</span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Delta: Price change per $1 stock move</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-help">
+                                    <span className="text-muted-foreground">Γ:</span>{' '}
+                                    <span className="font-mono tabular-nums">{formatGamma(greeks.gamma)}</span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Gamma: Rate of Delta change</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-help">
+                                    <span className="text-muted-foreground">Θ:</span>{' '}
+                                    <span className={`font-mono tabular-nums ${greeks.theta < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                      {formatTheta(greeks.theta)}
+                                    </span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Theta: Daily time decay per contract</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-help">
+                                    <span className="text-muted-foreground">ν:</span>{' '}
+                                    <span className="font-mono tabular-nums">{formatVega(greeks.vega)}</span>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">Vega: Price change per 1% IV move</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              
+                              <span className="text-muted-foreground">|</span>
+                              
+                              <span>
+                                <span className="text-muted-foreground">IV:</span>{' '}
+                                <span className="font-mono tabular-nums">{(greeks.impliedVolatility * 100).toFixed(1)}%</span>
+                              </span>
+                              
+                              <span>
+                                <span className="text-muted-foreground">DTE:</span>{' '}
+                                <span className="font-mono tabular-nums">{Math.round(greeks.daysToExpiration)}</span>
+                              </span>
+                            </div>
                           </div>
                         )}
                       </div>
