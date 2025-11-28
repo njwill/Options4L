@@ -480,7 +480,7 @@ function AppContent() {
               )}
               {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
               {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
-              {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
+              {activeTab === 'transactions' && <TransactionHistory transactions={transactions} onGroupCreated={refreshData} />}
               {activeTab === 'account' && <AccountSettings onDataChange={() => {
                 if (user) {
                   setHasLoadedUserData(false);
