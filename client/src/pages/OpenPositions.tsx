@@ -773,7 +773,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         }
         
         return (
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-0.5 bg-background rounded px-1 py-0.5">
             {greeksInfo.legs.map(({ legId, data, legInfo, greeks }) => {
               if (!data || data.error) {
                 return null;
