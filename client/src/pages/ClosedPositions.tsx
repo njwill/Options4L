@@ -326,7 +326,7 @@ export default function ClosedPositions({ positions, rollChains, onUngroupPositi
                       e.stopPropagation();
                       handleUngroupPosition(row);
                     }}
-                    disabled={ungroupingId === row.manualGroupId || ungroupingId === row.id}
+                    disabled={(row.manualGroupId && ungroupingId === row.manualGroupId) || ungroupingId === row.id}
                     data-testid={`button-ungroup-position-${row.id}`}
                   >
                     <Unlink className="h-4 w-4 text-muted-foreground" />
