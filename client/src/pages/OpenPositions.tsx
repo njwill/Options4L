@@ -486,6 +486,33 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       sortValue: (row) => new Date(row.entryDate).getTime(),
     },
     {
+      key: 'expiration',
+      header: 'Expiration',
+      accessor: (row) => {
+        const openLegs = row.legs.filter(leg => leg.status === 'open' && leg.expiration);
+        if (openLegs.length === 0) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        const expirations = openLegs
+          .map(leg => new Date(leg.expiration).getTime())
+          .filter(t => Number.isFinite(t));
+        if (expirations.length === 0) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        const nearestExpiration = Math.min(...expirations);
+        return <span className="tabular-nums">{formatDate(new Date(nearestExpiration).toISOString())}</span>;
+      },
+      sortValue: (row) => {
+        const openLegs = row.legs.filter(leg => leg.status === 'open' && leg.expiration);
+        if (openLegs.length === 0) return Infinity;
+        const expirations = openLegs
+          .map(leg => new Date(leg.expiration).getTime())
+          .filter(t => Number.isFinite(t));
+        if (expirations.length === 0) return Infinity;
+        return Math.min(...expirations);
+      },
+    },
+    {
       key: 'totalCredit',
       header: 'Total Credit',
       accessor: (row) => (
@@ -722,8 +749,9 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
 
   const footer = [
     <span className="font-semibold">Totals</span>,
-    '',
-    '',
+    '', // Strategy
+    '', // Entry Date
+    '', // Expiration
     <span className="tabular-nums text-green-600">{formatCurrency(totals.totalCredit)}</span>,
     <span className="tabular-nums text-red-600">{formatCurrency(Math.abs(totals.totalDebit))}</span>,
     <span className={`font-semibold tabular-nums ${totals.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -838,6 +866,8 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         emptyMessage="No open positions found"
         testId="table-open-positions"
         footer={footer}
+        defaultSortKey="expiration"
+        defaultSortDirection="asc"
       />
 
       <PositionDetailPanel

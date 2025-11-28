@@ -20,6 +20,8 @@ export interface Column<T> {
   className?: string;
 }
 
+type SortDirection = 'asc' | 'desc' | null;
+
 interface DataTableProps<T> {
   data: T[];
   columns: Column<T>[];
@@ -29,9 +31,9 @@ interface DataTableProps<T> {
   testId?: string;
   onRowClick?: (row: T) => void;
   footer?: React.ReactNode[];
+  defaultSortKey?: string | null;
+  defaultSortDirection?: SortDirection;
 }
-
-type SortDirection = 'asc' | 'desc' | null;
 
 export function DataTable<T>({
   data,
@@ -42,9 +44,11 @@ export function DataTable<T>({
   testId = 'data-table',
   onRowClick,
   footer,
+  defaultSortKey,
+  defaultSortDirection,
 }: DataTableProps<T>) {
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [sortColumn, setSortColumn] = useState<string | null>(defaultSortKey ?? null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(defaultSortDirection ?? null);
   const [currentPage, setCurrentPage] = useState(1);
 
   const handleSort = (columnKey: string) => {
