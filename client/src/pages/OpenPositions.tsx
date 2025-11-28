@@ -76,9 +76,52 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const { user } = useAuth();
   const isAuthenticated = !!user;
   const { toast } = useToast();
-  const { setPositionPrices } = usePriceCache();
+  const { setPositionPrices, getPositionPrices } = usePriceCache();
 
   const openPositions = positions.filter((p) => p.status === 'open');
+  
+  // Create stable key from position IDs to trigger hydration on remount
+  const openPositionIds = useMemo(
+    () => openPositions.map(p => p.id).sort().join(','),
+    [openPositions]
+  );
+  
+  // Hydrate prices from cache on mount/remount
+  useEffect(() => {
+    if (openPositions.length === 0) return;
+    
+    const cachedOptionData: Record<string, OptionLegData> = {};
+    const cachedQuotes: Record<string, StockQuote> = {};
+    let hasAnyData = false;
+    
+    for (const pos of openPositions) {
+      const cachedPrices = getPositionPrices(pos.id);
+      if (cachedPrices) {
+        hasAnyData = true;
+        Object.entries(cachedPrices).forEach(([legId, legData]) => {
+          cachedOptionData[legId] = legData as unknown as OptionLegData;
+          
+          // Extract underlying price for stock quotes
+          const typedLegData = legData as unknown as OptionLegData;
+          if (typedLegData.underlyingPrice && typedLegData.symbol && !cachedQuotes[typedLegData.symbol]) {
+            cachedQuotes[typedLegData.symbol] = {
+              symbol: typedLegData.symbol,
+              price: typedLegData.underlyingPrice,
+              change: 0,
+              changePercent: '0',
+              previousClose: 0,
+              latestTradingDay: '',
+            };
+          }
+        });
+      }
+    }
+    
+    if (hasAnyData) {
+      setOptionData(cachedOptionData);
+      setLiveQuotes(cachedQuotes);
+    }
+  }, [openPositionIds, getPositionPrices]);
   
   useEffect(() => {
     async function computeHashes() {
