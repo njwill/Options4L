@@ -18,6 +18,7 @@ Preferred communication style: Simple, everyday language.
 **Styling:** Tailwind CSS with a custom design token system for light/dark themes, using IBM Plex Sans font.
 **Key Design Decisions:** Client-side data processing post-upload, tabular data presentation with sorting and pagination, filter bars, modal detail views, and interactive charts (Recharts) for performance analysis.
 **Dashboard Visualizations:** Includes summary cards (Total P/L, Open Positions, Win Rate, Realized P/L), a P/L Over Time chart (Realized vs. Total P/L), and a Strategy Performance bar chart.
+**Live P/L Integration:** Dashboard displays live P/L data from cached option prices fetched on the Open Positions page. The LivePriceCacheProvider at App level stores prices by position ID, and Dashboard uses `calculateTotalLivePL()` to compute live values. Visual indicators (Zap icon, timestamp) appear when live data is available. Falls back gracefully to static P/L when no valid live prices exist (e.g., for expired options).
 
 ### Backend Architecture
 
