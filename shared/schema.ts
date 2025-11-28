@@ -353,6 +353,7 @@ export const manualPositionGroupings = pgTable("manual_position_groupings", {
   groupId: varchar("group_id", { length: 64 }).notNull(), // UUID for the custom position group
   transactionHash: varchar("transaction_hash", { length: 64 }).notNull(), // Links to specific transaction
   strategyType: varchar("strategy_type", { length: 50 }).notNull(), // The strategy type chosen by user
+  originAutoGroupHash: varchar("origin_auto_group_hash", { length: 64 }), // Hash of original auto-grouped position (for restore)
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   // Unique constraint: each transaction can only belong to one manual group per user

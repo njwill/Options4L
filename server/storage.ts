@@ -571,11 +571,13 @@ export async function getManualGroupingsForPositionBuilder(
 /**
  * Create a manual position grouping (group multiple transactions together)
  * All transactions in the group share the same groupId
+ * @param originAutoGroupHash - Optional hash of the original auto-grouped position (used for restore feature)
  */
 export async function createManualGrouping(
   userId: string,
   transactionHashes: string[],
-  strategyType: string
+  strategyType: string,
+  originAutoGroupHash?: string
 ): Promise<string> {
   // Generate a new groupId for this grouping
   const groupId = createHash('sha256')
@@ -601,6 +603,7 @@ export async function createManualGrouping(
       groupId,
       transactionHash,
       strategyType,
+      originAutoGroupHash: originAutoGroupHash || null,
     });
   }
   
@@ -623,6 +626,25 @@ export async function deleteManualGrouping(
     .returning();
   
   return result.length > 0;
+}
+
+/**
+ * Delete all manual groupings that share the same origin auto-group hash
+ * Used to restore auto-grouping after a position was ungrouped
+ */
+export async function deleteManualGroupingsByOrigin(
+  userId: string,
+  originAutoGroupHash: string
+): Promise<number> {
+  const result = await db
+    .delete(manualPositionGroupings)
+    .where(and(
+      eq(manualPositionGroupings.userId, userId),
+      eq(manualPositionGroupings.originAutoGroupHash, originAutoGroupHash)
+    ))
+    .returning();
+  
+  return result.length;
 }
 
 /**

@@ -30,6 +30,7 @@ import {
   getManualGroupingsForPositionBuilder,
   createManualGrouping,
   deleteManualGrouping,
+  deleteManualGroupingsByOrigin,
 } from "./storage";
 import { 
   insertCommentSchema, 
@@ -1496,6 +1497,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Compute origin hash from sorted transaction IDs (for restore feature)
+      const sortedTxnIds = [...transactionIds].sort();
+      const originAutoGroupHash = createHash('sha256')
+        .update(sortedTxnIds.join('|'))
+        .digest('hex')
+        .slice(0, 64);
+
       // Create individual manual groupings for each leg group
       const groupIds: string[] = [];
       
@@ -1515,7 +1523,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         else if (!isBuy && isCall) strategyType = 'Short Call';
         else if (!isBuy && !isCall) strategyType = 'Short Put';
         
-        const groupId = await createManualGrouping(req.user.id, legHashes, strategyType);
+        // Pass origin hash so this grouping can be restored later
+        const groupId = await createManualGrouping(req.user.id, legHashes, strategyType, originAutoGroupHash);
         groupIds.push(groupId);
       }
 
@@ -1529,6 +1538,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json({
         success: true,
         groupIds,
+        originAutoGroupHash, // Return so frontend can track for restore
         message: `Position ungrouped into ${groupIds.length} separate legs`,
       });
     } catch (error) {
@@ -1536,6 +1546,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to ungroup position',
+      });
+    }
+  });
+
+  // Restore auto-grouping by deleting manual groupings that were created from an ungroup operation
+  app.post('/api/restore-auto-grouping', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { originAutoGroupHash } = req.body;
+      
+      if (!originAutoGroupHash || typeof originAutoGroupHash !== 'string') {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Origin auto-group hash is required' 
+        });
+      }
+
+      const deletedCount = await deleteManualGroupingsByOrigin(req.user.id, originAutoGroupHash);
+      
+      if (deletedCount === 0) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'No groupings found with this origin hash. The position may have already been restored or was not created from an ungroup operation.' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        deletedCount,
+        message: `Restored auto-grouping by removing ${deletedCount} manual grouping(s)`,
+      });
+    } catch (error) {
+      console.error('Restore auto-grouping error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to restore auto-grouping',
       });
     }
   });
