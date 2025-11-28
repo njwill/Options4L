@@ -30,7 +30,7 @@ interface PriceCacheContextType {
   hasPositionPrices: (positionId: string) => boolean;
   hasCachedPrices: () => boolean;
   lastRefreshTime: Date | null;
-  setLastRefreshTime: (time: Date) => void;
+  setLastRefreshTime: (time: Date | null) => void;
 }
 
 const PriceCacheContext = createContext<PriceCacheContextType | null>(null);
@@ -41,7 +41,7 @@ export function LivePriceCacheProvider({ children }: { children: React.ReactNode
   const [lastRefreshTime, setLastRefreshTimeState] = useState<Date | null>(null);
   const prevUserIdRef = useRef<number | undefined>(undefined);
 
-  const setLastRefreshTime = useCallback((time: Date) => {
+  const setLastRefreshTime = useCallback((time: Date | null) => {
     setLastRefreshTimeState(time);
   }, []);
 

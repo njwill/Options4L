@@ -182,7 +182,7 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
             )}
             {totalUnrealizedPL !== null && position.status === 'open' && (
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Unrealized P/L</p>
+                <p className="text-sm text-muted-foreground mb-1">Live P/L</p>
                 <p className={`font-semibold tabular-nums flex items-center gap-1 ${totalUnrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {totalUnrealizedPL >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
                   {formatCurrency(totalUnrealizedPL)}

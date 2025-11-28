@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, RefreshCw, TrendingUp, TrendingDown, AlertCircle, X } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
@@ -75,7 +75,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const { user } = useAuth();
   const isAuthenticated = !!user;
   const { toast } = useToast();
-  const { setPositionPrices, getPositionPrices, lastRefreshTime, setLastRefreshTime } = usePriceCache();
+  const { setPositionPrices, getPositionPrices, clearAllPrices, lastRefreshTime, setLastRefreshTime } = usePriceCache();
 
   const openPositions = positions.filter((p) => p.status === 'open');
   
@@ -753,28 +753,54 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
         
         {openPositions.length > 0 && (
           <div className="flex flex-col items-end gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchLiveQuotes}
-                  disabled={isLoadingQuotes}
-                  data-testid="button-refresh-quotes"
-                >
-                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
-                  {isLoadingQuotes ? 'Loading...' : 'Refresh Prices'}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Fetch live option prices from Yahoo Finance</p>
-                {!isAuthenticated && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Sign in to refresh prices
-                  </p>
-                )}
-              </TooltipContent>
-            </Tooltip>
+            <div className="flex gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchLiveQuotes}
+                    disabled={isLoadingQuotes}
+                    data-testid="button-refresh-quotes"
+                  >
+                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
+                    {isLoadingQuotes ? 'Loading...' : 'Refresh Prices'}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Fetch live option prices from Yahoo Finance</p>
+                  {!isAuthenticated && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Sign in to refresh prices
+                    </p>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+              {lastRefreshTime && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        clearAllPrices();
+                        setLiveQuotes({});
+                        setOptionData({});
+                        setQuotesError(null);
+                        setLastRefreshTime(null);
+                      }}
+                      data-testid="button-clear-prices"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Clear Prices
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clear cached live prices</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
             {lastRefreshTime && (
               <span className="text-xs text-muted-foreground">
                 Updated {format(lastRefreshTime, 'h:mm a')}
