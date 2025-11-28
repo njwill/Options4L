@@ -133,6 +133,59 @@ function AppContent() {
     }
   };
 
+  // Refresh data without changing tabs or showing welcome toast (for use after actions)
+  const refreshData = async (): Promise<boolean> => {
+    if (isLoadingUserData) return false;
+    
+    try {
+      setIsLoadingUserData(true);
+      const response = await fetch('/api/user/data', {
+        credentials: 'include',
+      });
+
+      if (!isLoggedInRef.current) {
+        return false;
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        return false;
+      }
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          return false;
+        }
+        throw new Error('Failed to refresh data');
+      }
+
+      const data = await response.json();
+      
+      if (!isLoggedInRef.current) {
+        return false;
+      }
+      
+      if (data.hasData) {
+        setPositions(data.positions);
+        setTransactions(data.transactions);
+        setRollChains(data.rollChains || []);
+        setSummary(data.summary);
+        // Note: We don't change activeTab here to stay on current tab
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to refresh data:', error);
+      toast({
+        title: 'Failed to refresh',
+        description: 'Could not refresh data. Please try again.',
+        variant: 'destructive',
+      });
+      return true;
+    } finally {
+      setIsLoadingUserData(false);
+    }
+  };
+
   // Monitor user login and either show import dialog or load saved data
   useEffect(() => {
     const handleUserLogin = async () => {
@@ -425,8 +478,8 @@ function AppContent() {
                   summary={summary}
                 />
               )}
-              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={loadUserData} />}
-              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={loadUserData} />}
+              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
+              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} />}
               {activeTab === 'account' && <AccountSettings onDataChange={() => {
                 if (user) {
