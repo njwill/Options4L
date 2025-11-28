@@ -73,6 +73,9 @@ export function GreeksTooltip({
               <span className="text-muted-foreground flex items-center gap-1">
                 <Zap className="w-3 h-3" />
                 IV
+                {greeks.ivSource === 'calculated' && (
+                  <span className="text-[9px] text-green-500">(calc)</span>
+                )}
               </span>
               <span className="font-mono tabular-nums">{(greeks.impliedVolatility * 100).toFixed(1)}%</span>
             </div>
@@ -260,7 +263,12 @@ export function LegGreeksTooltip({
 
           <div className="border-t pt-2 mt-2 grid grid-cols-2 gap-2 text-xs">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">IV</span>
+              <span className="text-muted-foreground flex items-center gap-0.5">
+                IV
+                {greeks.ivSource === 'calculated' && (
+                  <span className="text-[8px] text-green-500">(calc)</span>
+                )}
+              </span>
               <span className="font-mono">{(greeks.impliedVolatility * 100).toFixed(1)}%</span>
             </div>
             <div className="flex justify-between">
