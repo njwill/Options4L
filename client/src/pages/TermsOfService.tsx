@@ -19,7 +19,7 @@ export default function TermsOfService() {
         <Card data-testid="card-terms-of-service">
           <CardHeader>
             <CardTitle className="text-3xl">Terms of Service</CardTitle>
-            <p className="text-sm text-muted-foreground">Last updated: November 27, 2025</p>
+            <p className="text-sm text-muted-foreground">Last updated: November 28, 2025</p>
           </CardHeader>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none space-y-6">
             <section>
@@ -40,6 +40,9 @@ export default function TermsOfService() {
                 <li>Options strategy detection and classification</li>
                 <li>Position tracking and roll detection</li>
                 <li>Profit/loss calculations and win rate statistics</li>
+                <li>Live options pricing via Yahoo Finance (for open positions)</li>
+                <li>Options Greeks calculations (Delta, Gamma, Theta, Vega) using Black-Scholes model</li>
+                <li>Manual position grouping for custom strategy analysis</li>
                 <li>Data visualization and charts</li>
                 <li>Transaction commenting and notes</li>
                 <li>Data export capabilities</li>
@@ -69,8 +72,44 @@ export default function TermsOfService() {
               </p>
             </section>
 
+            <section className="bg-muted/50 p-4 rounded-lg border">
+              <h2 className="text-xl font-semibold mb-3 text-destructive">4. Live Market Data Disclaimer</h2>
+              <p className="text-muted-foreground leading-relaxed">
+                The Service provides live options pricing data sourced from Yahoo Finance. This data is provided for informational purposes only:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground mt-2">
+                <li>Prices may be delayed and may not reflect real-time market conditions</li>
+                <li>We do not guarantee the accuracy, completeness, or timeliness of price data</li>
+                <li>Yahoo Finance is a third-party service outside our control; their data may contain errors or be unavailable</li>
+                <li>Live P/L calculations based on this data are estimates only</li>
+                <li>Do not rely on this data for actual trading decisions</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Always verify prices with your broker before executing trades.</strong>
+              </p>
+            </section>
+
+            <section className="bg-muted/50 p-4 rounded-lg border">
+              <h2 className="text-xl font-semibold mb-3 text-destructive">5. Greeks Calculations Disclaimer</h2>
+              <p className="text-muted-foreground leading-relaxed">
+                The Service calculates options "Greeks" (Delta, Gamma, Theta, Vega, Rho) using the Black-Scholes pricing model. 
+                These calculations are provided for educational purposes only:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground mt-2">
+                <li>Black-Scholes is a theoretical model with known limitations and assumptions</li>
+                <li>Greeks are based on calculated implied volatility which may differ from actual market conditions</li>
+                <li>The model assumes continuous trading, no dividends (unless adjusted), and log-normal price distribution</li>
+                <li>Real-world options behavior may deviate significantly from model predictions</li>
+                <li>Risk-free rate is estimated and may not reflect current market rates</li>
+                <li>Greeks change constantly and displayed values may be stale</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Do not rely on these calculations for risk management or trading decisions. Consult professional tools and advisors for actual trading.</strong>
+              </p>
+            </section>
+
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">4. User Responsibilities</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">6. User Responsibilities</h2>
               <p className="text-muted-foreground leading-relaxed">By using the Service, you agree to:</p>
               <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
                 <li>Provide accurate and complete data when uploading trading history</li>
@@ -83,7 +122,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">5. User Content and Data</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">7. User Content and Data</h2>
               
               <h3 className="text-lg font-medium mt-4 mb-2">Your Data Ownership</h3>
               <p className="text-muted-foreground leading-relaxed">
@@ -104,7 +143,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">6. Accuracy of Analysis</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">8. Accuracy of Analysis</h2>
               <p className="text-muted-foreground leading-relaxed">
                 While we strive to provide accurate analysis, the Service may contain errors, bugs, or inaccuracies. 
                 The calculations, strategy classifications, and statistics provided are estimates based on the data you upload and our analysis algorithms.
@@ -115,7 +154,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">7. Limitation of Liability</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">9. Limitation of Liability</h2>
               <p className="text-muted-foreground leading-relaxed">
                 TO THE MAXIMUM EXTENT PERMITTED BY LAW:
               </p>
@@ -129,7 +168,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">8. Indemnification</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">10. Indemnification</h2>
               <p className="text-muted-foreground leading-relaxed">
                 You agree to indemnify and hold harmless Options4L and its operators from any claims, damages, or expenses 
                 arising from your use of the Service, your violation of these Terms, or your violation of any rights of another party.
@@ -137,7 +176,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">9. Service Availability</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">11. Service Availability</h2>
               <p className="text-muted-foreground leading-relaxed">
                 We do not guarantee that the Service will be available at all times. We may modify, suspend, or discontinue 
                 the Service at any time without notice. We are not liable for any modification, suspension, or discontinuation of the Service.
@@ -145,7 +184,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">10. Account Termination</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">12. Account Termination</h2>
               <p className="text-muted-foreground leading-relaxed">
                 You may delete your account at any time through the Account Settings page. 
                 We reserve the right to suspend or terminate accounts that violate these Terms or for any other reason at our discretion.
@@ -153,7 +192,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">11. Open Source License</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">13. Open Source License</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Options4L is open source software released under the MIT License. The source code is available at{' '}
                 <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
@@ -166,7 +205,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">12. Changes to Terms</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">14. Changes to Terms</h2>
               <p className="text-muted-foreground leading-relaxed">
                 We may modify these Terms at any time. We will notify users of material changes by updating the "Last updated" date. 
                 Continued use of the Service after changes constitutes acceptance of the modified Terms.
@@ -174,7 +213,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">13. Governing Law</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">15. Governing Law</h2>
               <p className="text-muted-foreground leading-relaxed">
                 These Terms shall be governed by and construed in accordance with the laws of the United States, 
                 without regard to conflict of law principles.
@@ -182,14 +221,14 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">14. Severability</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">16. Severability</h2>
               <p className="text-muted-foreground leading-relaxed">
                 If any provision of these Terms is found to be unenforceable, the remaining provisions will continue in full force and effect.
               </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">15. Contact</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">17. Contact</h2>
               <p className="text-muted-foreground leading-relaxed">
                 If you have questions about these Terms, please open an issue on our{' '}
                 <a href="https://github.com/njwill/Options4L/issues" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
