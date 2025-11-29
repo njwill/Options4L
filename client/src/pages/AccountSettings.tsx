@@ -734,8 +734,31 @@ export default function AccountSettings({ onDataChange, onFileUpload }: AccountS
         </CardHeader>
         <CardContent>
           {uploads.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-uploads">
-              No uploads yet. Click "Upload New File" above to get started.
+            <div className="text-center py-8 space-y-4" data-testid="text-no-uploads">
+              <div className="text-muted-foreground">
+                No uploads yet. Upload your Robinhood trading data to get started.
+              </div>
+              {onFileUpload && (
+                <Button
+                  variant="outline"
+                  className="relative"
+                  data-testid="button-upload-first-file"
+                >
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) onFileUpload(file);
+                      e.target.value = '';
+                    }}
+                    data-testid="input-file-first"
+                  />
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Your First File
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
