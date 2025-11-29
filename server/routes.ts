@@ -1964,7 +1964,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const tagsMap = await getTagsForPositions(req.user.id, positionHashes);
-      return res.json({ success: true, tags: tagsMap });
+      return res.json({ success: true, tagsByPosition: tagsMap });
     } catch (error) {
       console.error('Lookup position tags error:', error);
       return res.status(500).json({
