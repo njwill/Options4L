@@ -14,7 +14,7 @@ import {
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
-import type { Position, RollChain } from '@shared/schema';
+import type { Position, RollChain, StockHolding } from '@shared/schema';
 import { format, differenceInDays } from 'date-fns';
 import { 
   RotateCcw, 
@@ -35,6 +35,7 @@ type AnalysisType = 'rolls' | 'strategies';
 interface AnalysisProps {
   positions: Position[];
   rollChains: RollChain[];
+  stockHoldings?: StockHolding[];
 }
 
 interface RollChainWithDetails extends RollChain {
@@ -43,7 +44,7 @@ interface RollChainWithDetails extends RollChain {
   currentLivePL?: number | null;
 }
 
-export default function Analysis({ positions, rollChains }: AnalysisProps) {
+export default function Analysis({ positions, rollChains, stockHoldings = [] }: AnalysisProps) {
   const [analysisType, setAnalysisType] = useState<AnalysisType>('rolls');
   const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set());
   const [symbolFilter, setSymbolFilter] = useState<string>('all');

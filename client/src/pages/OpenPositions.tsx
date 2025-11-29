@@ -8,7 +8,7 @@ import { PositionCommentsPanel } from '@/components/PositionCommentsPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { Position, RollChain } from '@shared/schema';
+import type { Position, RollChain, StockHolding } from '@shared/schema';
 import { format } from 'date-fns';
 import { Link2, MessageSquare, Unlink, Activity, Redo2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
@@ -60,11 +60,12 @@ interface OptionLegData {
 interface OpenPositionsProps {
   positions: Position[];
   rollChains: RollChain[];
+  stockHoldings?: StockHolding[];
   onUngroupPosition?: (groupId: string) => Promise<void>;
   onDataChange?: () => Promise<boolean>;
 }
 
-export default function OpenPositions({ positions, rollChains, onUngroupPosition, onDataChange }: OpenPositionsProps) {
+export default function OpenPositions({ positions, rollChains, stockHoldings = [], onUngroupPosition, onDataChange }: OpenPositionsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
@@ -924,6 +925,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       <PositionDetailPanel
         position={selectedPosition}
         rollChains={rollChains}
+        stockHoldings={stockHoldings}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
       />

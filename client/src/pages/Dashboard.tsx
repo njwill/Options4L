@@ -7,7 +7,7 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { PositionDetailPanel } from '@/components/PositionDetailPanel';
 import { usePriceCache, calculateTotalLivePL } from '@/hooks/use-price-cache';
-import type { Position, Transaction, RollChain, SummaryStats } from '@shared/schema';
+import type { Position, Transaction, RollChain, SummaryStats, StockHolding } from '@shared/schema';
 import { format } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
 
@@ -15,12 +15,13 @@ interface DashboardProps {
   positions: Position[];
   transactions: Transaction[];
   rollChains: RollChain[];
+  stockHoldings?: StockHolding[];
   onFileUpload: (file: File) => Promise<void>;
   isProcessing: boolean;
   summary: SummaryStats;
 }
 
-export default function Dashboard({ positions, transactions, rollChains, onFileUpload, isProcessing, summary }: DashboardProps) {
+export default function Dashboard({ positions, transactions, rollChains, stockHoldings = [], onFileUpload, isProcessing, summary }: DashboardProps) {
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const { getAllCachedPrices, hasCachedPrices, lastRefreshTime } = usePriceCache();
 
@@ -199,6 +200,7 @@ export default function Dashboard({ positions, transactions, rollChains, onFileU
       <PositionDetailPanel
         position={selectedPosition}
         rollChains={rollChains}
+        stockHoldings={stockHoldings}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
       />

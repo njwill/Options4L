@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TrendingUp, TrendingDown, Link2, MessageSquare, Unlink, Redo2 } from 'lucide-react';
-import type { Position, RollChain } from '@shared/schema';
+import type { Position, RollChain, StockHolding } from '@shared/schema';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/use-auth';
 import { computePositionHash } from '@/lib/positionHash';
@@ -19,11 +19,12 @@ import { useToast } from '@/hooks/use-toast';
 interface ClosedPositionsProps {
   positions: Position[];
   rollChains: RollChain[];
+  stockHoldings?: StockHolding[];
   onUngroupPosition?: (groupId: string) => Promise<void>;
   onDataChange?: () => Promise<boolean>;
 }
 
-export default function ClosedPositions({ positions, rollChains, onUngroupPosition, onDataChange }: ClosedPositionsProps) {
+export default function ClosedPositions({ positions, rollChains, stockHoldings = [], onUngroupPosition, onDataChange }: ClosedPositionsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
@@ -453,6 +454,7 @@ export default function ClosedPositions({ positions, rollChains, onUngroupPositi
       <PositionDetailPanel
         position={selectedPosition}
         rollChains={rollChains}
+        stockHoldings={stockHoldings}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
       />

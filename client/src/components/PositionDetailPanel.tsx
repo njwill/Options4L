@@ -9,10 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { StrategyBadge } from './StrategyBadge';
 import { RollChainTimeline } from './RollChainTimeline';
-import type { Position, RollChain } from '@shared/schema';
+import type { Position, RollChain, StockHolding } from '@shared/schema';
 import { format } from 'date-fns';
 import { usePriceCache } from '@/hooks/use-price-cache';
-import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Package } from 'lucide-react';
 import { 
   calculateGreeks, 
   calculatePositionGreeks, 
@@ -26,11 +26,12 @@ import {
 interface PositionDetailPanelProps {
   position: Position | null;
   rollChains: RollChain[];
+  stockHoldings?: StockHolding[];
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: PositionDetailPanelProps) {
+export function PositionDetailPanel({ position, rollChains, stockHoldings = [], isOpen, onClose }: PositionDetailPanelProps) {
   const { getPositionPrices } = usePriceCache();
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
 
@@ -118,6 +119,50 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
     setTotalUnrealizedPL(hasValidData ? totalPL : null);
   }, [legPrices, position]);
 
+  // Find matching stock holding for this position's symbol
+  // Note: These useMemo hooks must be before any early returns to avoid React hooks rules violation
+  const matchingStockHolding = useMemo(() => {
+    if (!position || stockHoldings.length === 0) return null;
+    return stockHoldings.find(h => h.symbol.toUpperCase() === position.symbol.toUpperCase());
+  }, [position, stockHoldings]);
+
+  // Check if this is a strategy that benefits from stock context
+  const showStockContext = useMemo(() => {
+    if (!matchingStockHolding || !position) return false;
+    // Show context for long positions with shares, or short positions with short shares
+    const hasRelevantHolding = matchingStockHolding.totalShares !== 0 || matchingStockHolding.realizedPL !== 0;
+    if (!hasRelevantHolding) return false;
+    const strategies = ['Covered Call', 'Short Call', 'Cash Secured Put', 'Short Put', 'Long Call', 'Long Put'];
+    return strategies.includes(position.strategyType);
+  }, [matchingStockHolding, position]);
+
+  // Calculate covered call breakeven if applicable
+  const coveredCallBreakeven = useMemo(() => {
+    if (!showStockContext || !matchingStockHolding || !position || position.strategyType !== 'Covered Call') return null;
+    // Need at least 100 shares (long) for covered call
+    if (matchingStockHolding.totalShares < 100) return null;
+    
+    // Determine actual contracts in the position
+    const positionContracts = Math.abs(position.legs?.[0]?.quantity || 1);
+    // Max contracts that could be covered by shares
+    const maxContractsCoverable = Math.floor(matchingStockHolding.totalShares / 100);
+    // Use the lesser of position contracts or coverable contracts
+    const contractsCovered = Math.min(positionContracts, maxContractsCoverable);
+    
+    if (contractsCovered === 0) return null;
+    
+    const premiumReceived = position.totalCredit;
+    // Premium per share based on actual contracts in this position
+    const premiumPerShare = premiumReceived / (positionContracts * 100);
+    
+    return {
+      originalCostBasis: matchingStockHolding.avgCostBasis,
+      adjustedBreakeven: matchingStockHolding.avgCostBasis - premiumPerShare,
+      premiumPerShare,
+      contractsCovered,
+    };
+  }, [showStockContext, matchingStockHolding, position]);
+
   if (!position) return null;
 
   // Find the roll chain this position belongs to
@@ -195,6 +240,70 @@ export function PositionDetailPanel({ position, rollChains, isOpen, onClose }: P
               </div>
             )}
           </div>
+
+          {/* Stock Context Section */}
+          {showStockContext && matchingStockHolding && (
+            <div className="p-4 border rounded-md bg-muted/30">
+              <div className="flex items-center gap-2 mb-3">
+                <Package className="w-4 h-4 text-primary" />
+                <h3 className="font-semibold">Underlying Stock Position</h3>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Shares Held</p>
+                  <p className="font-semibold tabular-nums">{matchingStockHolding.totalShares.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Avg Cost Basis</p>
+                  <p className="font-semibold tabular-nums">{formatCurrency(matchingStockHolding.avgCostBasis)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Total Cost</p>
+                  <p className="font-semibold tabular-nums">{formatCurrency(matchingStockHolding.totalCost)}</p>
+                </div>
+                {matchingStockHolding.realizedPL !== 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Realized P/L (Stock)</p>
+                    <p className={`font-semibold tabular-nums ${matchingStockHolding.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(matchingStockHolding.realizedPL)}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Covered Call Breakeven Analysis */}
+              {coveredCallBreakeven && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-sm font-medium mb-2">Covered Call Breakeven Analysis</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Contracts Covered</p>
+                      <p className="font-semibold tabular-nums">{coveredCallBreakeven.contractsCovered}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Premium/Share</p>
+                      <p className="font-semibold tabular-nums text-green-600">{formatCurrency(coveredCallBreakeven.premiumPerShare)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Adjusted Breakeven</p>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className="font-semibold tabular-nums cursor-help">
+                            {formatCurrency(coveredCallBreakeven.adjustedBreakeven)}
+                            <span className="text-xs text-muted-foreground ml-1">(was {formatCurrency(coveredCallBreakeven.originalCostBasis)})</span>
+                          </p>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          <p className="text-xs">Your effective breakeven is lowered by the premium collected from selling calls.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Position Greeks Section */}
           {positionGreeks && position.status === 'open' && (

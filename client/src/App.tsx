@@ -26,7 +26,7 @@ import { UserMenu } from '@/components/UserMenu';
 import { ImportSessionDialog } from '@/components/ImportSessionDialog';
 import { useEngagementTracker } from '@/hooks/use-engagement-tracker';
 import { useToast } from '@/hooks/use-toast';
-import type { Position, Transaction, SummaryStats, RollChain } from '@shared/schema';
+import type { Position, Transaction, SummaryStats, RollChain, StockHolding } from '@shared/schema';
 
 type TabType = 'dashboard' | 'open' | 'closed' | 'transactions' | 'analysis' | 'account';
 
@@ -41,6 +41,7 @@ function AppContent() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [rawTransactions, setRawTransactions] = useState<Transaction[]>([]); // Original parsed transactions for import
   const [rollChains, setRollChains] = useState<RollChain[]>([]);
+  const [stockHoldings, setStockHoldings] = useState<StockHolding[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [summary, setSummary] = useState<SummaryStats>({
     totalPL: 0,
@@ -161,6 +162,7 @@ function AppContent() {
         setPositions(data.positions);
         setTransactions(data.transactions);
         setRollChains(data.rollChains || []);
+        setStockHoldings(data.stockHoldings || []);
         setSummary(data.summary);
         setActiveTab('dashboard');
         
@@ -221,6 +223,7 @@ function AppContent() {
         setPositions(data.positions);
         setTransactions(data.transactions);
         setRollChains(data.rollChains || []);
+        setStockHoldings(data.stockHoldings || []);
         setSummary(data.summary);
         // Note: We don't change activeTab here to stay on current tab
       }
@@ -292,6 +295,7 @@ function AppContent() {
       setTransactions([]);
       setRawTransactions([]);
       setRollChains([]);
+      setStockHoldings([]);
       setSummary({
         totalPL: 0,
         realizedPL: 0,
@@ -346,6 +350,7 @@ function AppContent() {
       setTransactions(data.transactions);
       setRawTransactions(data.rawTransactions || data.transactions); // Store raw parsed transactions
       setRollChains(data.rollChains || []);
+      setStockHoldings(data.stockHoldings || []);
       setSummary(data.summary);
       setActiveTab('dashboard');
 
@@ -372,6 +377,7 @@ function AppContent() {
     transactions: Transaction[];
     positions: Position[];
     rollChains: RollChain[];
+    stockHoldings?: StockHolding[];
     summary: SummaryStats;
     message: string;
   }) => {
@@ -384,6 +390,7 @@ function AppContent() {
     setTransactions(data.transactions);
     setPositions(data.positions);
     setRollChains(data.rollChains);
+    setStockHoldings(data.stockHoldings || []);
     setSummary(data.summary);
     setRawTransactions([]); // Clear raw transactions after import
     setActiveTab('dashboard');
@@ -656,15 +663,16 @@ function AppContent() {
                   positions={positions}
                   transactions={transactions}
                   rollChains={rollChains}
+                  stockHoldings={stockHoldings}
                   onFileUpload={handleFileUpload}
                   isProcessing={isProcessing}
                   summary={summary}
                 />
               )}
-              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
-              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
+              {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} stockHoldings={stockHoldings} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
+              {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} stockHoldings={stockHoldings} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} onGroupCreated={refreshData} />}
-              {activeTab === 'analysis' && <Analysis positions={positions} rollChains={rollChains} />}
+              {activeTab === 'analysis' && <Analysis positions={positions} rollChains={rollChains} stockHoldings={stockHoldings} />}
               {activeTab === 'account' && <AccountSettings 
                 onDataChange={() => {
                   if (user) {

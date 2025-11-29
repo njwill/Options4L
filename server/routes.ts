@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import multer from "multer";
 import { parseFile, consolidateTransactions } from "./utils/csvParser";
 import { buildPositions, calculateSummary } from "./utils/positionBuilder";
+import { buildStockHoldings } from "./utils/stockHoldingsBuilder";
 import authRoutes from "./authRoutes";
 import { 
   createUploadRecord, 
@@ -104,6 +105,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : [];
       const { positions, rolls, rollChains } = buildPositions(transactions, manualGroupings);
 
+      // Step 3b: Build stock holdings from Buy/Sell transactions
+      const stockHoldings = buildStockHoldings(transactions);
+
       // Step 4: Calculate summary statistics
       const summary = calculateSummary(positions);
 
@@ -142,6 +146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         transactions,
         positions,
         rollChains,
+        stockHoldings,
         summary,
         deduplication: req.user ? { newCount, duplicateCount, totalCount: transactions.length } : undefined,
         rawTransactions: rawTransactionsForImport, // Include unmodified parsed transactions for session import
@@ -194,6 +199,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Build positions and detect rolls
       const { positions, rolls, rollChains } = buildPositions(allTransactions, manualGroupings);
 
+      // Build stock holdings
+      const stockHoldings = buildStockHoldings(allTransactions);
+
       // Calculate summary statistics
       const summary = calculateSummary(positions);
 
@@ -218,6 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         transactions: allTransactions,
         positions,
         rollChains,
+        stockHoldings,
         summary,
         deduplication: {
           newCount: saveResult.newCount,
@@ -287,6 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           transactions: [],
           positions: [],
           rollChains: [],
+          stockHoldings: [],
           summary: {
             totalPL: 0,
             realizedPL: 0,
@@ -305,6 +315,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Build positions and detect rolls
       const { positions, rolls, rollChains } = buildPositions(transactions, manualGroupings);
+
+      // Build stock holdings
+      const stockHoldings = buildStockHoldings(transactions);
 
       // Calculate summary statistics
       const summary = calculateSummary(positions);
@@ -328,6 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         transactions,
         positions,
         rollChains,
+        stockHoldings,
         summary,
       });
     } catch (error) {

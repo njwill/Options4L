@@ -184,6 +184,34 @@ export const positionSchema = z.object({
 
 export type Position = z.infer<typeof positionSchema>;
 
+// Stock lot (individual buy lot for FIFO tracking)
+export const stockLotSchema = z.object({
+  id: z.string(),
+  transactionId: z.string(),
+  buyDate: z.string(),
+  quantity: z.number(),
+  remainingQuantity: z.number(),
+  pricePerShare: z.number(),
+  totalCost: z.number(),
+});
+
+export type StockLot = z.infer<typeof stockLotSchema>;
+
+// Stock holding (aggregate of all lots for a symbol)
+export const stockHoldingSchema = z.object({
+  symbol: z.string(),
+  totalShares: z.number(),           // Current shares held
+  avgCostBasis: z.number(),          // Weighted average cost per share
+  totalCost: z.number(),             // Total invested amount
+  realizedPL: z.number(),            // P/L from sold shares
+  lots: z.array(stockLotSchema),     // Individual buy lots (for FIFO)
+  transactionIds: z.array(z.string()), // All transaction IDs involved
+  firstBuyDate: z.string(),
+  lastActivityDate: z.string(),
+});
+
+export type StockHolding = z.infer<typeof stockHoldingSchema>;
+
 // Summary statistics
 export const summaryStatsSchema = z.object({
   totalPL: z.number(),
@@ -205,6 +233,7 @@ export const uploadResponseSchema = z.object({
   transactions: z.array(transactionSchema),
   positions: z.array(positionSchema),
   rollChains: z.array(rollChainSchema),
+  stockHoldings: z.array(stockHoldingSchema).optional(),
   summary: summaryStatsSchema,
 });
 
