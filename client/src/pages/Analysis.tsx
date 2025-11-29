@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -67,8 +67,8 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
   const { user } = useAuth();
   const isAuthenticated = !!user;
 
-  // Compute position hashes for tag lookups
-  useMemo(() => {
+  // Compute position hashes for tag lookups - use useEffect for side effects
+  useEffect(() => {
     async function computeHashes() {
       const hashMap = new Map<string, string>();
       for (const pos of positions) {
@@ -80,7 +80,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
     if (positions.length > 0) {
       computeHashes();
     }
-  }, [positions.length]);
+  }, [positions]);
 
   // Fetch user's tags
   const { data: tagsData } = useQuery<{ success: boolean; tags: Tag[] }>({
