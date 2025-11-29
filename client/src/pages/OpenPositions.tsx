@@ -69,6 +69,7 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
   const [searchQuery, setSearchQuery] = useState('');
   const [strategyFilter, setStrategyFilter] = useState('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
+  const [tagFilterIds, setTagFilterIds] = useState<string[]>([]);
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   
   const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
@@ -187,6 +188,15 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
     enabled: isAuthenticated && allHashes.length > 0,
     staleTime: 30000,
   });
+  
+  // Fetch all user tags for filtering
+  const { data: userTagsData } = useQuery<{ success: boolean; tags: Tag[] }>({
+    queryKey: ['/api/tags'],
+    enabled: isAuthenticated,
+    staleTime: 30000,
+  });
+  
+  const availableTags = userTagsData?.tags || [];
   
   const getStrategyOverride = (posId: string): string | null => {
     const hash = positionHashes.get(posId);
@@ -362,10 +372,18 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
         strategyFilter === 'all' || position.displayStrategy === strategyFilter;
 
       const matchesSymbol = symbolFilter === 'all' || position.symbol === symbolFilter;
+      
+      // Tag filtering
+      let matchesTags = true;
+      if (tagFilterIds.length > 0) {
+        const positionTags = getPositionTags(position.id);
+        const positionTagIdSet = new Set(positionTags.map(t => t.id));
+        matchesTags = tagFilterIds.some(tagId => positionTagIdSet.has(tagId));
+      }
 
-      return matchesSearch && matchesStrategy && matchesSymbol;
+      return matchesSearch && matchesStrategy && matchesSymbol && matchesTags;
     });
-  }, [positionsWithDisplayStrategy, searchQuery, strategyFilter, symbolFilter]);
+  }, [positionsWithDisplayStrategy, searchQuery, strategyFilter, symbolFilter, tagFilterIds, positionTagsData?.tagsByPosition]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -938,6 +956,7 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
     setSearchQuery('');
     setStrategyFilter('all');
     setSymbolFilter('all');
+    setTagFilterIds([]);
   };
 
   // Calculate totals for the footer
@@ -1010,6 +1029,9 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
         onClearFilters={handleClearFilters}
         symbols={symbols}
         showStatusFilter={false}
+        availableTags={availableTags}
+        selectedTagIds={tagFilterIds}
+        onTagFilterChange={setTagFilterIds}
       />
 
       <DataTable
