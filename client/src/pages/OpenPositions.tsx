@@ -176,6 +176,11 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
     staleTime: 30000,
   });
   
+  // Create a version key that changes when overrides content changes
+  // Don't use useMemo here - we want this to be recomputed on every render
+  // so that any change in override data triggers column recreation
+  const overridesVersion = JSON.stringify(strategyOverridesData?.overrides || {});
+  
   const getStrategyOverride = (posId: string): string | null => {
     const hash = positionHashes.get(posId);
     if (!hash || !strategyOverridesData?.overrides) return null;
@@ -423,11 +428,11 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
     return calculateLivePositionPL(position as any, positionPrices as any);
   };
 
-  const columns: Column<Position>[] = [
+  const columns: Column<Position>[] = useMemo(() => [
     {
       key: 'symbol',
       header: 'Symbol',
-      accessor: (row) => {
+      accessor: (row: Position) => {
         const quote = liveQuotes[row.symbol];
         return (
           <div className="flex flex-col">
@@ -440,12 +445,12 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
           </div>
         );
       },
-      sortValue: (row) => row.symbol,
+      sortValue: (row: Position) => row.symbol,
     },
     {
       key: 'strategy',
       header: 'Strategy',
-      accessor: (row) => {
+      accessor: (row: Position) => {
         const override = getStrategyOverride(row.id);
         const displayStrategy = override || row.strategyType;
         return (
@@ -464,7 +469,7 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
           </div>
         );
       },
-      sortValue: (row) => getStrategyOverride(row.id) || row.strategyType,
+      sortValue: (row: Position) => getStrategyOverride(row.id) || row.strategyType,
     },
     {
       key: 'entryDate',
@@ -857,8 +862,8 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
       },
       sortValue: () => 0,
       className: 'text-center w-[80px]',
-    }] : []),
-  ] as Column<Position>[];
+    }] as Column<Position>[] : []),
+  ] as Column<Position>[], [overridesVersion, liveQuotes, isAuthenticated, commentCountsData, rollChains, optionData, ungroupingId, restoringId]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -938,7 +943,7 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
       />
 
       <DataTable
-        key={`open-positions-${JSON.stringify(strategyOverridesData?.overrides || {})}`}
+        key={overridesVersion}
         data={filteredPositions}
         columns={columns}
         keyExtractor={(row) => row.id}

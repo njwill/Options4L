@@ -83,6 +83,11 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     staleTime: 30000,
   });
   
+  // Create a version key that changes when overrides content changes
+  // Don't use useMemo here - we want this to be recomputed on every render
+  // so that any change in override data triggers column recreation
+  const overridesVersion = JSON.stringify(strategyOverridesData?.overrides || {});
+  
   const getStrategyOverride = (posId: string): string | null => {
     const hash = positionHashes.get(posId);
     if (!hash || !strategyOverridesData?.overrides) return null;
@@ -258,17 +263,17 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     return rollChains.find((chain) => chain.chainId === position.rollChainId) || null;
   };
 
-  const columns: Column<Position>[] = [
+  const columns: Column<Position>[] = useMemo(() => [
     {
       key: 'symbol',
       header: 'Symbol',
-      accessor: (row) => <span className="font-medium">{row.symbol}</span>,
-      sortValue: (row) => row.symbol,
+      accessor: (row: Position) => <span className="font-medium">{row.symbol}</span>,
+      sortValue: (row: Position) => row.symbol,
     },
     {
       key: 'strategy',
       header: 'Strategy',
-      accessor: (row) => {
+      accessor: (row: Position) => {
         const override = getStrategyOverride(row.id);
         const displayStrategy = override || row.strategyType;
         return (
@@ -287,7 +292,7 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
           </div>
         );
       },
-      sortValue: (row) => getStrategyOverride(row.id) || row.strategyType,
+      sortValue: (row: Position) => getStrategyOverride(row.id) || row.strategyType,
     },
     {
       key: 'entryDate',
@@ -437,8 +442,8 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
       },
       sortValue: () => 0,
       className: 'text-center w-[80px]',
-    }] : []),
-  ] as Column<Position>[];
+    }] as Column<Position>[] : []),
+  ] as Column<Position>[], [overridesVersion, isAuthenticated, commentCountsData, rollChains, ungroupingId, restoringId]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -470,7 +475,7 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
       />
 
       <DataTable
-        key={`closed-positions-${JSON.stringify(strategyOverridesData?.overrides || {})}`}
+        key={overridesVersion}
         data={filteredPositions}
         columns={columns}
         keyExtractor={(row) => row.id}
