@@ -1,68 +1,82 @@
-# Options4L 📊
+# Options4L
 
 A comprehensive Robinhood trading analysis tool that transforms your CSV/Excel trading data into actionable insights. Automatically detect complex options strategies, track position rolls across time, and analyze your trading performance with beautiful visualizations.
 
-**🚀 [Try it now at tool.options4l.com](https://tool.options4l.com)**
+**[Try it now at tool.options4l.com](https://tool.options4l.com)**
 
-## ✨ Features
+**Free for the first 100 signups!** Monthly subscription coming soon - early users get lifetime free access.
 
-### 🎯 Strategy Detection
+## Features
+
+### Strategy Detection
 Automatically identifies 20+ complex options strategies including:
 - **Single-leg**: Covered Calls, Cash Secured Puts, Long/Short Calls/Puts
 - **Two-leg spreads**: Credit/Debit Spreads (Call/Put), Straddles, Strangles
 - **Multi-leg**: Iron Condors, Calendar Spreads, Diagonal Spreads
 - **Stock positions**: Long/Short Stock tracking
 
-### 🔄 Roll Chain Tracking
+### Roll Chain Tracking
 - Detects when you roll positions forward (close one position, open another)
 - Links related positions into complete roll chains with full history
 - Shows detailed credit/debit breakdown for each roll segment
 - Calculates net P/L across entire roll chains
-- Supports both long rolls (BTC→STO) and short rolls (STC→BTO)
 
-### 📈 Performance Analytics
-- **Total P/L**: Realized + unrealized gains/losses
-- **Win Rate**: Success percentage with wins/losses ratio
+### Live Market Data & Greeks
+- **Real-time pricing** via Yahoo Finance - no API key required
+- **Greeks calculations** using Black-Scholes model (Delta, Gamma, Theta, Vega)
+- **Implied Volatility** computed via Newton-Raphson solver
+- **Live P/L** updates on open positions
+- Works automatically for authenticated users
+
+### Performance Analytics
+- **Dashboard metrics**: Total P/L, Win Rate, Open Positions, Realized P/L
 - **P/L Over Time**: Dual-line chart showing realized vs total P/L trends
+- **Monthly P/L Breakdown**: Stacked bar chart with realized vs unrealized
 - **Strategy Performance**: Compare profitability across different strategies
-- Interactive charts with Recharts library
 
-### 💼 Position Management
+### Position Management
 - FIFO-based lot tracking for accurate cost basis
+- **Manual position grouping** - organize related positions together
 - Separate views for open and closed positions
 - Filterable by symbol, strategy type, and status
-- Sortable tables for easy analysis
 - Premium per contract display for options
 
-### 🎨 Robinhood-Inspired Design
-- Clean, modern interface with Robinhood's signature green (#00C805)
-- Dark mode by default with optional light mode toggle
-- IBM Plex Sans typography for excellent readability
-- Responsive design optimized for data-intensive workflows
+### Notes & Comments
+- Add notes to individual transactions for future reference
+- Add comments to positions to track your thinking
+- Notes persist across file re-uploads
+- Available for authenticated users
 
-## 🛠️ Tech Stack
+### Authentication & Data Persistence
+- **NOSTR login** (NIP-07) - use your existing NOSTR identity
+- **Email magic link** - passwordless, secure email authentication
+- **Account linking** - connect both NOSTR and email to one account
+- **Smart deduplication** - upload the same file twice without duplicates
+- **Upload history** - track all your file uploads and manage data
+
+## Tech Stack
 
 ### Frontend
-- **React 18** with TypeScript for type safety
-- **Vite** for lightning-fast development and builds
+- **React 18** with TypeScript
+- **Vite** for fast development and builds
 - **shadcn/ui** + Radix UI for accessible components
 - **Tailwind CSS** for styling
 - **TanStack Query** for server state management
-- **Wouter** for client-side routing
 - **Recharts** for data visualization
+- **@uqee/black-scholes** for Greeks calculations
 
 ### Backend
-- **Express.js** on Node.js
-- **TypeScript** throughout
-- **PapaParse** for CSV parsing
-- **XLSX** for Excel file support
-- **Drizzle ORM** (configured for future database persistence)
+- **Express.js** on Node.js with TypeScript
+- **PostgreSQL** with Drizzle ORM for data persistence
+- **PapaParse** for CSV parsing, **XLSX** for Excel
+- **JWT** authentication with secure cookies
+- **Nodemailer** for magic link emails
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+ installed
-- npm or yarn package manager
+- Node.js 18+
+- PostgreSQL database (optional - works without for anonymous usage)
 
 ### Installation
 
@@ -77,14 +91,29 @@ cd Options4L
 npm install
 ```
 
-3. Start the development server:
+3. Set up environment variables (for full features):
+```bash
+DATABASE_URL=your_postgres_connection_string
+SESSION_SECRET=your_session_secret
+SMTP_HOST=your_smtp_host
+SMTP_USER=your_smtp_user
+SMTP_PASS=your_smtp_password
+SMTP_FROM=noreply@yourdomain.com
+```
+
+4. Push database schema:
+```bash
+npm run db:push
+```
+
+5. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser to `http://localhost:5000`
+6. Open your browser to `http://localhost:5000`
 
-## 📖 Usage
+## Usage
 
 ### 1. Export Your Trading Data from Robinhood
 - Log into your Robinhood account
@@ -98,68 +127,26 @@ npm run dev
 
 ### 3. Explore Your Data
 - **Dashboard**: View summary metrics and performance charts
-- **Open Positions**: See currently active trades with unrealized P/L
-- **Closed Positions**: Analyze completed trades and historical performance
-- **Position Details**: Click any position to see full transaction history and roll chains
+- **Open Positions**: See active trades with live P/L and Greeks
+- **Closed Positions**: Analyze completed trades
+- **Position Details**: Click any position for full transaction history
 
-### Understanding Roll Chains
-When you roll an option position (close one, open another on the same day), Options4L automatically:
-- Links the positions together into a chain
-- Tracks each roll segment with detailed credit/debit breakdown
-- Calculates cumulative P/L across the entire chain
-- Shows expiration and strike changes over time
+### 4. Create an Account (Optional)
+- Sign up free to save your data permanently
+- Add notes to transactions and positions
+- Access live market data and Greeks
+- Group related positions together
 
-## 📁 Project Structure
-
-```
-Options4L/
-├── client/                 # Frontend React application
-│   ├── src/
-│   │   ├── components/    # Reusable UI components
-│   │   ├── pages/         # Route pages (Dashboard, Open/Closed Positions)
-│   │   ├── lib/           # Utilities and query client
-│   │   └── App.tsx        # Main app component
-├── server/                # Backend Express server
-│   ├── routes.ts          # API endpoints
-│   ├── utils/             # Business logic
-│   │   ├── csvParser.ts             # CSV/Excel parsing & transaction merging
-│   │   ├── positionBuilder.ts       # FIFO position tracking & roll chain builder
-│   │   ├── strategyClassification.ts # Strategy detection
-│   │   └── rollDetection.ts         # Roll pattern matching
-│   └── storage.ts         # In-memory storage interface
-├── shared/                # Shared types and schemas
-│   └── schema.ts          # Zod schemas for type safety
-└── package.json
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
-- Setting up your development environment
-- Code style and conventions
-- Submitting pull requests
-- Testing guidelines
-
-## 📝 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- Inspired by Robinhood's clean, accessible design
-- Built with the amazing shadcn/ui component library
-- Powered by the React and TypeScript ecosystems
-
-## 📧 Contact
-
-- **GitHub**: [@njwill](https://github.com/njwill)
-- **Issues**: [Report bugs or request features](https://github.com/njwill/Options4L/issues)
-
-## 🔗 Links
+## Links
 
 - **Live App**: [tool.options4l.com](https://tool.options4l.com)
 - **Repository**: [github.com/njwill/Options4L](https://github.com/njwill/Options4L)
+- **Issues**: [Report bugs or request features](https://github.com/njwill/Options4L/issues)
 
 ---
 
-Made with ❤️ for options traders everywhere
+Made with care for options traders everywhere
