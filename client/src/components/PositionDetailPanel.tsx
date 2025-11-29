@@ -224,7 +224,8 @@ export function PositionDetailPanel({
         description: `Position reclassified as ${newStrategy}`,
       });
       
-      onStrategyOverrideChange?.();
+      // Await the callback to ensure cache is invalidated before state updates
+      await onStrategyOverrideChange?.();
     } catch (error) {
       toast({
         title: "Error",
@@ -249,7 +250,8 @@ export function PositionDetailPanel({
         description: "Position reverted to auto-detected classification",
       });
       
-      onStrategyOverrideChange?.();
+      // Await the callback to ensure cache is invalidated before state updates
+      await onStrategyOverrideChange?.();
     } catch (error) {
       toast({
         title: "Error",
