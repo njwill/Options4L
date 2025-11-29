@@ -127,3 +127,61 @@ export function calculateCoveredCallBreakeven(
   const premiumPerShare = optionPremiumReceived / sharesPerContract;
   return stockCostBasis - premiumPerShare;
 }
+
+/**
+ * Calculate stock shares available at a specific date using FIFO accounting.
+ * This is useful for determining if a short call was covered at the time it was opened.
+ */
+export function getSharesAtDate(
+  transactions: Transaction[],
+  symbol: string,
+  asOfDate: string
+): number {
+  const asOfTime = new Date(asOfDate).getTime();
+  
+  // Filter to stock transactions for this symbol before the given date
+  const stockTxns = transactions.filter((t) => 
+    !t.option.isOption && 
+    (t.transCode === 'Buy' || t.transCode === 'Sell') &&
+    (t.option.symbol === symbol || t.instrument === symbol) &&
+    new Date(t.activityDate).getTime() <= asOfTime
+  );
+
+  if (stockTxns.length === 0) {
+    return 0;
+  }
+
+  const sortedTxns = [...stockTxns].sort((a, b) => {
+    return new Date(a.activityDate).getTime() - new Date(b.activityDate).getTime();
+  });
+
+  // Build lots using FIFO
+  interface SimpleLot {
+    quantity: number;
+    remainingQuantity: number;
+  }
+
+  const lots: SimpleLot[] = [];
+
+  sortedTxns.forEach((txn) => {
+    if (txn.transCode === 'Buy') {
+      lots.push({
+        quantity: txn.quantity,
+        remainingQuantity: txn.quantity,
+      });
+    } else if (txn.transCode === 'Sell') {
+      let remainingToSell = txn.quantity;
+
+      for (const lot of lots) {
+        if (remainingToSell <= 0) break;
+        if (lot.remainingQuantity <= 0) continue;
+
+        const sellQty = Math.min(remainingToSell, lot.remainingQuantity);
+        lot.remainingQuantity -= sellQty;
+        remainingToSell -= sellQty;
+      }
+    }
+  });
+
+  return lots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
+}

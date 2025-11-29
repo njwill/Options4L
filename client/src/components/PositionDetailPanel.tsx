@@ -6,13 +6,23 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { StrategyBadge } from './StrategyBadge';
 import { RollChainTimeline } from './RollChainTimeline';
-import type { Position, RollChain, StockHolding } from '@shared/schema';
+import type { Position, RollChain, StockHolding, StrategyType } from '@shared/schema';
 import { format } from 'date-fns';
 import { usePriceCache } from '@/hooks/use-price-cache';
-import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Package } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
+import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Package, ChevronDown, RefreshCw, Shield, Undo2 } from 'lucide-react';
 import { 
   calculateGreeks, 
   calculatePositionGreeks, 
@@ -22,6 +32,7 @@ import {
   formatTheta,
   formatVega
 } from '@/lib/blackScholes';
+import { apiRequest } from '@/lib/queryClient';
 
 interface PositionDetailPanelProps {
   position: Position | null;
@@ -29,11 +40,26 @@ interface PositionDetailPanelProps {
   stockHoldings?: StockHolding[];
   isOpen: boolean;
   onClose: () => void;
+  positionHash?: string;
+  strategyOverride?: string | null;
+  onStrategyOverrideChange?: () => void;
 }
 
-export function PositionDetailPanel({ position, rollChains, stockHoldings = [], isOpen, onClose }: PositionDetailPanelProps) {
+export function PositionDetailPanel({ 
+  position, 
+  rollChains, 
+  stockHoldings = [], 
+  isOpen, 
+  onClose,
+  positionHash,
+  strategyOverride,
+  onStrategyOverrideChange,
+}: PositionDetailPanelProps) {
   const { getPositionPrices } = usePriceCache();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
+  const [isUpdatingStrategy, setIsUpdatingStrategy] = useState(false);
 
   const legPrices = position ? (getPositionPrices(position.id) || {}) : {};
 
@@ -163,6 +189,78 @@ export function PositionDetailPanel({ position, rollChains, stockHoldings = [], 
     };
   }, [showStockContext, matchingStockHolding, position]);
 
+  // Determine the displayed strategy (override takes precedence over original)
+  const displayedStrategy = useMemo((): StrategyType => {
+    return (strategyOverride || position?.strategyType || 'Unknown') as StrategyType;
+  }, [strategyOverride, position]);
+
+  // Calculate if reclassification is relevant for this position
+  const canReclassifyAsCoveredCall = useMemo(() => {
+    if (!position || !user || !positionHash) return false;
+    const currentStrategy = strategyOverride || position.strategyType;
+    if (currentStrategy !== 'Short Call') return false;
+    if (matchingStockHolding && matchingStockHolding.totalShares >= 100) return true;
+    return false;
+  }, [position, user, positionHash, strategyOverride, matchingStockHolding]);
+
+  const canRevertToOriginal = useMemo(() => {
+    return !!strategyOverride && user && positionHash;
+  }, [strategyOverride, user, positionHash]);
+
+  // Handler to update strategy override
+  const handleStrategyOverride = async (newStrategy: string) => {
+    if (!position || !positionHash || !user) return;
+    
+    setIsUpdatingStrategy(true);
+    try {
+      await apiRequest('POST', '/api/strategy-overrides', {
+        positionHash,
+        originalStrategy: position.strategyType,
+        overrideStrategy: newStrategy,
+      });
+      
+      toast({
+        title: "Strategy Updated",
+        description: `Position reclassified as ${newStrategy}`,
+      });
+      
+      onStrategyOverrideChange?.();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update strategy",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingStrategy(false);
+    }
+  };
+
+  // Handler to revert to auto-detected strategy
+  const handleRevertStrategy = async () => {
+    if (!positionHash || !user) return;
+    
+    setIsUpdatingStrategy(true);
+    try {
+      await apiRequest('DELETE', `/api/strategy-overrides/${encodeURIComponent(positionHash)}`);
+      
+      toast({
+        title: "Strategy Reverted",
+        description: "Position reverted to auto-detected classification",
+      });
+      
+      onStrategyOverrideChange?.();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to revert strategy",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingStrategy(false);
+    }
+  };
+
   if (!position) return null;
 
   // Find the roll chain this position belongs to
@@ -184,13 +282,83 @@ export function PositionDetailPanel({ position, rollChains, stockHoldings = [], 
     }
   };
 
+  // Show reclassify options only if user is authenticated and there are options available
+  const showReclassifyOption = canReclassifyAsCoveredCall || canRevertToOriginal;
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto" data-testid="dialog-position-detail">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
+          <DialogTitle className="flex items-center gap-3 flex-wrap">
             <span className="text-2xl font-semibold">{position.symbol}</span>
-            <StrategyBadge strategy={position.strategyType} />
+            
+            {showReclassifyOption ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    className="h-auto p-0 hover:bg-transparent"
+                    disabled={isUpdatingStrategy}
+                    data-testid="button-reclassify-strategy"
+                  >
+                    <div className="flex items-center gap-1">
+                      <StrategyBadge strategy={displayedStrategy} />
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" data-testid="dropdown-strategy-options">
+                  {canReclassifyAsCoveredCall && (
+                    <DropdownMenuItem 
+                      onClick={() => handleStrategyOverride('Covered Call')}
+                      className="flex items-center gap-2"
+                      data-testid="menu-item-covered-call"
+                    >
+                      <Shield className="h-4 w-4 text-green-600" />
+                      <div>
+                        <p className="font-medium">Reclassify as Covered Call</p>
+                        <p className="text-xs text-muted-foreground">
+                          You own {matchingStockHolding?.totalShares || 0} shares of {position.symbol}
+                        </p>
+                      </div>
+                    </DropdownMenuItem>
+                  )}
+                  {canReclassifyAsCoveredCall && canRevertToOriginal && <DropdownMenuSeparator />}
+                  {canRevertToOriginal && (
+                    <DropdownMenuItem 
+                      onClick={handleRevertStrategy}
+                      className="flex items-center gap-2"
+                      data-testid="menu-item-revert-strategy"
+                    >
+                      <Undo2 className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="font-medium">Revert to Auto-Detected</p>
+                        <p className="text-xs text-muted-foreground">
+                          Original: {position.strategyType}
+                        </p>
+                      </div>
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <StrategyBadge strategy={displayedStrategy} />
+            )}
+            
+            {strategyOverride && (
+              <Tooltip>
+                <TooltipTrigger>
+                  <Badge variant="outline" className="text-xs">
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Override
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>This strategy was manually reclassified from "{position.strategyType}"</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            
             <Badge variant={position.status === 'open' ? 'default' : 'secondary'}>
               {position.status}
             </Badge>

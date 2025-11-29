@@ -2,6 +2,7 @@ import type { Transaction, Position, OptionLeg, Roll, SummaryStats, RollChain, R
 import { randomUUID, createHash } from 'crypto';
 import { classifyStrategy, createOptionLeg } from './strategyClassification';
 import { detectRolls, createRollRecords } from './rollDetection';
+import { getSharesAtDate } from './stockHoldingsBuilder';
 
 // Lot entry for FIFO tracking
 interface LotEntry {
@@ -82,8 +83,8 @@ export function buildPositions(
   const anomalies: AnomalyRecord[] = [];
   matchClosingTransactions(closingTxns, legLedgerMap, anomalies);
 
-  // Create one position per leg initially
-  const singleLegPositions = createSingleLegPositions(legLedgerMap);
+  // Create one position per leg initially (pass all transactions for covered call detection)
+  const singleLegPositions = createSingleLegPositions(legLedgerMap, transactions);
 
   // Apply manual groupings before auto-merge
   // This allows users to override auto-detection for specific transactions
@@ -253,7 +254,10 @@ function matchClosingTransactions(
 }
 
 // Create one position per leg ledger
-function createSingleLegPositions(legLedgerMap: Map<string, LegLedger>): PositionRecord[] {
+function createSingleLegPositions(
+  legLedgerMap: Map<string, LegLedger>,
+  allTransactions: Transaction[]
+): PositionRecord[] {
   const positions: PositionRecord[] = [];
 
   legLedgerMap.forEach((leg) => {
@@ -297,7 +301,10 @@ function createSingleLegPositions(legLedgerMap: Map<string, LegLedger>): Positio
       status: leg.remainingQuantity > 0 ? 'open' : 'closed',
     };
 
-    const strategyType = classifyStrategy([openingLeg]);
+    // Check stock holdings at entry date for covered call detection
+    const stockShares = getSharesAtDate(allTransactions, leg.symbol, leg.firstOpenDate);
+    const strategyType = classifyStrategy([openingLeg], stockShares);
+    
     const status = leg.remainingQuantity > 0 ? 'open' : 'closed';
     const exitDate = status === 'closed' ? leg.lastCloseDate : null;
 

@@ -405,3 +405,35 @@ export const deleteManualGroupingSchema = z.object({
 
 export type CreateManualGroupingInput = z.infer<typeof createManualGroupingSchema>;
 export type DeleteManualGroupingInput = z.infer<typeof deleteManualGroupingSchema>;
+
+// Strategy Overrides table - stores user-specified strategy reclassifications
+// When auto-detection classifies incorrectly (e.g., Short Call instead of Covered Call),
+// users can manually override the strategy type for a specific position
+export const strategyOverrides = pgTable("strategy_overrides", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  positionHash: varchar("position_hash", { length: 128 }).notNull(), // Hash of the position
+  originalStrategy: varchar("original_strategy", { length: 50 }).notNull(), // What it was classified as
+  overrideStrategy: varchar("override_strategy", { length: 50 }).notNull(), // What user wants it to be
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // Only one override per position per user
+  userPositionIdx: uniqueIndex("user_position_override_idx").on(table.userId, table.positionHash),
+}));
+
+export type StrategyOverride = typeof strategyOverrides.$inferSelect;
+export type InsertStrategyOverride = typeof strategyOverrides.$inferInsert;
+
+// Zod schema for strategy override validation
+export const createStrategyOverrideSchema = z.object({
+  positionHash: z.string().min(1),
+  originalStrategy: StrategyTypeEnum,
+  overrideStrategy: StrategyTypeEnum,
+});
+
+export const deleteStrategyOverrideSchema = z.object({
+  positionHash: z.string().min(1),
+});
+
+export type CreateStrategyOverrideInput = z.infer<typeof createStrategyOverrideSchema>;
+export type DeleteStrategyOverrideInput = z.infer<typeof deleteStrategyOverrideSchema>;

@@ -71,6 +71,24 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     staleTime: 30000,
   });
   
+  // Fetch strategy overrides for all positions
+  const { data: strategyOverridesData, refetch: refetchStrategyOverrides } = useQuery<{ success: boolean; overrides: Record<string, string> }>({
+    queryKey: ['/api/strategy-overrides/lookup', allHashes],
+    queryFn: async () => {
+      if (allHashes.length === 0) return { success: true, overrides: {} };
+      const res = await apiRequest('POST', '/api/strategy-overrides/lookup', { positionHashes: allHashes });
+      return res.json();
+    },
+    enabled: isAuthenticated && allHashes.length > 0,
+    staleTime: 30000,
+  });
+  
+  const getStrategyOverride = (posId: string): string | null => {
+    const hash = positionHashes.get(posId);
+    if (!hash || !strategyOverridesData?.overrides) return null;
+    return strategyOverridesData.overrides[hash] || null;
+  };
+  
   const commentCounts = useMemo(() => {
     const counts = new Map<string, number>();
     if (commentCountsData?.counts) {
@@ -250,17 +268,26 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     {
       key: 'strategy',
       header: 'Strategy',
-      accessor: (row) => (
-        <div className="flex items-center gap-1.5">
-          <StrategyBadge strategy={row.strategyType} />
-          {row.isManuallyGrouped && (
-            <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400">
-              Manual
-            </Badge>
-          )}
-        </div>
-      ),
-      sortValue: (row) => row.strategyType,
+      accessor: (row) => {
+        const override = getStrategyOverride(row.id);
+        const displayStrategy = override || row.strategyType;
+        return (
+          <div className="flex items-center gap-1.5">
+            <StrategyBadge strategy={displayStrategy as import('@shared/schema').StrategyType} />
+            {override && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 border-green-300 text-green-600 dark:border-green-700 dark:text-green-400">
+                Reclassified
+              </Badge>
+            )}
+            {!override && row.isManuallyGrouped && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400">
+                Manual
+              </Badge>
+            )}
+          </div>
+        );
+      },
+      sortValue: (row) => getStrategyOverride(row.id) || row.strategyType,
     },
     {
       key: 'entryDate',
@@ -457,6 +484,12 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
         stockHoldings={stockHoldings}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
+        positionHash={selectedPosition ? positionHashes.get(selectedPosition.id) : undefined}
+        strategyOverride={selectedPosition ? getStrategyOverride(selectedPosition.id) : null}
+        onStrategyOverrideChange={() => {
+          refetchStrategyOverrides();
+          if (onDataChange) onDataChange();
+        }}
       />
       
       {isAuthenticated && (

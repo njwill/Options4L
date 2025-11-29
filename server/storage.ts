@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, users, emailVerificationTokens, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type User, type EmailVerificationToken } from '@shared/schema';
+import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, strategyOverrides, users, emailVerificationTokens, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type StrategyOverride, type User, type EmailVerificationToken } from '@shared/schema';
 import { eq, and, count, asc, desc, sql, max, inArray, lt } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
@@ -1071,4 +1071,119 @@ export async function unlinkAuthMethod(
     .returning();
   
   return { success: true, user: updatedUser };
+}
+
+// ========== Strategy Override Functions ==========
+
+/**
+ * Get all strategy overrides for a user
+ */
+export async function getStrategyOverridesForUser(userId: string): Promise<StrategyOverride[]> {
+  return await db
+    .select()
+    .from(strategyOverrides)
+    .where(eq(strategyOverrides.userId, userId))
+    .orderBy(desc(strategyOverrides.createdAt));
+}
+
+/**
+ * Get a strategy override by position hash for a user
+ */
+export async function getStrategyOverrideByHash(
+  userId: string,
+  positionHash: string
+): Promise<StrategyOverride | null> {
+  const [override] = await db
+    .select()
+    .from(strategyOverrides)
+    .where(
+      and(
+        eq(strategyOverrides.userId, userId),
+        eq(strategyOverrides.positionHash, positionHash)
+      )
+    )
+    .limit(1);
+  
+  return override || null;
+}
+
+/**
+ * Create or update a strategy override for a position
+ */
+export async function upsertStrategyOverride(
+  userId: string,
+  positionHash: string,
+  originalStrategy: string,
+  overrideStrategy: string
+): Promise<StrategyOverride> {
+  // Use upsert to handle both create and update
+  const [result] = await db
+    .insert(strategyOverrides)
+    .values({
+      userId,
+      positionHash,
+      originalStrategy,
+      overrideStrategy,
+    })
+    .onConflictDoUpdate({
+      target: [strategyOverrides.userId, strategyOverrides.positionHash],
+      set: {
+        originalStrategy,
+        overrideStrategy,
+        createdAt: sql`NOW()`,
+      },
+    })
+    .returning();
+  
+  return result;
+}
+
+/**
+ * Delete a strategy override for a position
+ */
+export async function deleteStrategyOverride(
+  userId: string,
+  positionHash: string
+): Promise<boolean> {
+  const result = await db
+    .delete(strategyOverrides)
+    .where(
+      and(
+        eq(strategyOverrides.userId, userId),
+        eq(strategyOverrides.positionHash, positionHash)
+      )
+    );
+  
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Get strategy override counts for a list of position hashes
+ */
+export async function getStrategyOverrideCounts(
+  userId: string,
+  positionHashes: string[]
+): Promise<Record<string, string>> {
+  if (positionHashes.length === 0) {
+    return {};
+  }
+  
+  const overrides = await db
+    .select({
+      positionHash: strategyOverrides.positionHash,
+      overrideStrategy: strategyOverrides.overrideStrategy,
+    })
+    .from(strategyOverrides)
+    .where(
+      and(
+        eq(strategyOverrides.userId, userId),
+        inArray(strategyOverrides.positionHash, positionHashes)
+      )
+    );
+  
+  const result: Record<string, string> = {};
+  for (const override of overrides) {
+    result[override.positionHash] = override.overrideStrategy;
+  }
+  return result;
 }

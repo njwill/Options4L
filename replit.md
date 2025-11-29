@@ -43,6 +43,7 @@ Preferred communication style: Simple, everyday language.
 **Account Linking & Merging:** Users can link both NOSTR and email to a single account, allowing flexible login and account recovery. Merging transfers all data if an authentication method is already associated with another account.
 **Deduplication Strategy:** Transactions are deduplicated using a hash derived from key transaction fields, preventing redundant data on re-uploads and maintaining data integrity.
 **Comments:** Authenticated users can add notes to individual transactions (linked by `transactionHash`) and positions (linked by `positionHash`), ensuring persistence across re-uploads.
+**Strategy Overrides:** Authenticated users can manually reclassify positions when auto-detection doesn't capture the full context. For example, a "Short Call" can be reclassified as "Covered Call" when the user owns the underlying shares. Overrides persist across data re-uploads using `positionHash` and are displayed with a "Reclassified" badge in tables and detail views.
 
 ## External Dependencies
 
@@ -89,7 +90,7 @@ Preferred communication style: Simple, everyday language.
 
 **ORM:** Drizzle ORM with PostgreSQL dialect via `@neondatabase/serverless` driver.
 **Schema:** Defined in `shared/schema.ts`, supporting migrations.
-**Active Usage:** Stores authenticated user data across `users`, `uploads`, `transactions`, `comments`, `positionComments`, and `email_verification_tokens` tables. Features user-scoped data isolation, composite unique constraints for deduplication, and indexing for performance.
+**Active Usage:** Stores authenticated user data across `users`, `uploads`, `transactions`, `comments`, `positionComments`, `strategy_overrides`, and `email_verification_tokens` tables. Features user-scoped data isolation, composite unique constraints for deduplication, and indexing for performance.
 
 ## Legal Documentation
 

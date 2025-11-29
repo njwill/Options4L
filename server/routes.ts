@@ -33,6 +33,11 @@ import {
   createManualGrouping,
   deleteManualGrouping,
   deleteManualGroupingsByOrigin,
+  getStrategyOverridesForUser,
+  getStrategyOverrideByHash,
+  upsertStrategyOverride,
+  deleteStrategyOverride,
+  getStrategyOverrideCounts,
 } from "./storage";
 import { 
   insertCommentSchema, 
@@ -41,6 +46,8 @@ import {
   updatePositionCommentSchema,
   createManualGroupingSchema,
   deleteManualGroupingSchema,
+  createStrategyOverrideSchema,
+  deleteStrategyOverrideSchema,
 } from "@shared/schema";
 import "./types";
 
@@ -1600,6 +1607,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to restore auto-grouping',
+      });
+    }
+  });
+
+  // ============================================================================
+  // Strategy Override API
+  // ============================================================================
+
+  // Get all strategy overrides for the user
+  app.get('/api/strategy-overrides', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const overrides = await getStrategyOverridesForUser(req.user.id);
+
+      return res.json({
+        success: true,
+        overrides,
+      });
+    } catch (error) {
+      console.error('Get strategy overrides error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get strategy overrides',
+      });
+    }
+  });
+
+  // Get strategy override counts for multiple position hashes
+  app.post('/api/strategy-overrides/lookup', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positionHashes } = req.body;
+      if (!Array.isArray(positionHashes)) {
+        return res.status(400).json({ success: false, message: 'positionHashes must be an array' });
+      }
+
+      const overrides = await getStrategyOverrideCounts(req.user.id, positionHashes);
+
+      return res.json({
+        success: true,
+        overrides,
+      });
+    } catch (error) {
+      console.error('Get strategy override lookup error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to lookup strategy overrides',
+      });
+    }
+  });
+
+  // Create or update a strategy override
+  app.post('/api/strategy-overrides', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = createStrategyOverrideSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          success: false, 
+          message: validation.error.errors[0]?.message || 'Invalid request' 
+        });
+      }
+
+      const { positionHash, originalStrategy, overrideStrategy } = validation.data;
+      const override = await upsertStrategyOverride(
+        req.user.id,
+        positionHash,
+        originalStrategy,
+        overrideStrategy
+      );
+
+      return res.json({
+        success: true,
+        override,
+        message: `Strategy updated to ${overrideStrategy}`,
+      });
+    } catch (error) {
+      console.error('Create strategy override error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create strategy override',
+      });
+    }
+  });
+
+  // Delete a strategy override (revert to auto-detected strategy)
+  app.delete('/api/strategy-overrides/:positionHash', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positionHash } = req.params;
+      const success = await deleteStrategyOverride(req.user.id, positionHash);
+
+      if (!success) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Strategy override not found or you do not have permission to delete it' 
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Strategy reverted to auto-detected classification',
+      });
+    } catch (error) {
+      console.error('Delete strategy override error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete strategy override',
       });
     }
   });
