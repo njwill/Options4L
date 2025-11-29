@@ -963,8 +963,11 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
         onClose={() => setSelectedPosition(null)}
         positionHash={selectedPosition ? positionHashes.get(selectedPosition.id) : undefined}
         strategyOverride={selectedPosition ? getStrategyOverride(selectedPosition.id) : null}
-        onStrategyOverrideChange={() => {
-          refetchStrategyOverrides();
+        onStrategyOverrideChange={async () => {
+          // Invalidate and refetch to ensure fresh data
+          await queryClient.invalidateQueries({ 
+            queryKey: ['/api/strategy-overrides/lookup'] 
+          });
           if (onDataChange) onDataChange();
         }}
       />
