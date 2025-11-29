@@ -332,3 +332,67 @@ export function calculatePositionGreeks(
 
   return { totalDelta, totalGamma, totalTheta, totalVega };
 }
+
+/**
+ * Calculate intrinsic and extrinsic value for an option
+ * Intrinsic = the "real" value if exercised now
+ * Extrinsic = time value (premium above intrinsic)
+ */
+export interface IntrinsicExtrinsicResult {
+  intrinsicValue: number;
+  extrinsicValue: number;
+  isITM: boolean; // In The Money
+  isATM: boolean; // At The Money (within 1% of strike)
+  isOTM: boolean; // Out of The Money
+  moneyness: string; // "ITM", "ATM", or "OTM"
+}
+
+export function calculateIntrinsicExtrinsic(
+  underlyingPrice: number,
+  strikePrice: number,
+  optionType: 'call' | 'put',
+  optionPrice: number
+): IntrinsicExtrinsicResult {
+  // Calculate intrinsic value
+  let intrinsicValue: number;
+  if (optionType === 'call') {
+    // Call intrinsic = max(0, underlying - strike)
+    intrinsicValue = Math.max(0, underlyingPrice - strikePrice);
+  } else {
+    // Put intrinsic = max(0, strike - underlying)
+    intrinsicValue = Math.max(0, strikePrice - underlyingPrice);
+  }
+  
+  // Extrinsic value = option price - intrinsic value
+  // Can be slightly negative due to bid/ask spread, floor at 0
+  const extrinsicValue = Math.max(0, optionPrice - intrinsicValue);
+  
+  // Determine moneyness
+  const priceDiff = underlyingPrice - strikePrice;
+  const percentFromStrike = Math.abs(priceDiff / strikePrice) * 100;
+  
+  // ATM if within 1% of strike
+  const isATM = percentFromStrike < 1;
+  
+  let isITM: boolean;
+  let isOTM: boolean;
+  
+  if (optionType === 'call') {
+    isITM = priceDiff > 0 && !isATM;
+    isOTM = priceDiff < 0 && !isATM;
+  } else {
+    isITM = priceDiff < 0 && !isATM;
+    isOTM = priceDiff > 0 && !isATM;
+  }
+  
+  const moneyness = isATM ? 'ATM' : isITM ? 'ITM' : 'OTM';
+  
+  return {
+    intrinsicValue,
+    extrinsicValue,
+    isITM,
+    isATM,
+    isOTM,
+    moneyness,
+  };
+}

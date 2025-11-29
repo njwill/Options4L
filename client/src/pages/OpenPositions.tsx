@@ -18,7 +18,8 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { 
   calculateGreeks, 
-  calculatePositionGreeks, 
+  calculatePositionGreeks,
+  calculateIntrinsicExtrinsic,
   type GreeksResult,
   formatDelta,
   formatGamma,
@@ -740,6 +741,52 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
                         <div>Mark: <span className="tabular-nums font-medium">${mark.toFixed(2)}</span></div>
                         <div>Last: <span className="tabular-nums">${(data.last || 0).toFixed(2)}</span></div>
                       </div>
+                      
+                      {/* Intrinsic & Extrinsic Values */}
+                      {data.underlyingPrice && data.type && (
+                        (() => {
+                          const intrinsicExtrinsic = calculateIntrinsicExtrinsic(
+                            data.underlyingPrice,
+                            data.strike,
+                            data.type.toLowerCase() as 'call' | 'put',
+                            mark
+                          );
+                          return (
+                            <div className="border-t pt-2 mt-2">
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Intrinsic:</span>
+                                  <span className={`tabular-nums font-medium ${intrinsicExtrinsic.intrinsicValue > 0 ? 'text-green-600' : ''}`}>
+                                    ${intrinsicExtrinsic.intrinsicValue.toFixed(2)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Extrinsic:</span>
+                                  <span className="tabular-nums font-medium text-amber-600">
+                                    ${intrinsicExtrinsic.extrinsicValue.toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-1 text-center">
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-[10px] px-1.5 py-0 ${
+                                    intrinsicExtrinsic.isITM ? 'border-green-500 text-green-600' :
+                                    intrinsicExtrinsic.isOTM ? 'border-red-500 text-red-600' :
+                                    'border-muted-foreground'
+                                  }`}
+                                >
+                                  {intrinsicExtrinsic.moneyness}
+                                </Badge>
+                                {' '}
+                                <span className="text-muted-foreground">
+                                  @ ${data.underlyingPrice.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      )}
                       
                       {greeks && (
                         <div className="border-t pt-2 mt-2">

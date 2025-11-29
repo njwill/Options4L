@@ -31,7 +31,8 @@ import { useToast } from '@/hooks/use-toast';
 import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Package, ChevronDown, RefreshCw, Shield, Undo2, Tags, Plus, X, Check, Loader2 } from 'lucide-react';
 import { 
   calculateGreeks, 
-  calculatePositionGreeks, 
+  calculatePositionGreeks,
+  calculateIntrinsicExtrinsic,
   type GreeksResult,
   formatDelta,
   formatGamma,
@@ -945,6 +946,48 @@ export function PositionDetailPanel({
                               </span>
                             </div>
                           </div>
+                        )}
+                        
+                        {/* Intrinsic & Extrinsic Values */}
+                        {priceData?.underlyingPrice && currentPrice && currentPrice > 0 && (
+                          (() => {
+                            const intrinsicExtrinsic = calculateIntrinsicExtrinsic(
+                              priceData.underlyingPrice,
+                              leg.strike,
+                              leg.optionType?.toLowerCase() as 'call' | 'put',
+                              currentPrice
+                            );
+                            return (
+                              <div className="mt-2 pt-2 border-t border-border/50">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4 text-xs">
+                                    <span>
+                                      <span className="text-muted-foreground">Intrinsic:</span>{' '}
+                                      <span className={`font-mono tabular-nums font-medium ${intrinsicExtrinsic.intrinsicValue > 0 ? 'text-green-600' : ''}`}>
+                                        ${intrinsicExtrinsic.intrinsicValue.toFixed(2)}
+                                      </span>
+                                    </span>
+                                    <span>
+                                      <span className="text-muted-foreground">Extrinsic:</span>{' '}
+                                      <span className="font-mono tabular-nums font-medium text-amber-600">
+                                        ${intrinsicExtrinsic.extrinsicValue.toFixed(2)}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`text-[10px] ${
+                                      intrinsicExtrinsic.isITM ? 'border-green-500 text-green-600' :
+                                      intrinsicExtrinsic.isOTM ? 'border-red-500 text-red-600' :
+                                      'border-muted-foreground'
+                                    }`}
+                                  >
+                                    {intrinsicExtrinsic.moneyness}
+                                  </Badge>
+                                </div>
+                              </div>
+                            );
+                          })()
                         )}
                       </div>
                     )}
