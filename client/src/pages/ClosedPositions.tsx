@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TrendingUp, TrendingDown, Link2, MessageSquare, Unlink, Redo2 } from 'lucide-react';
-import type { Position, RollChain, StockHolding } from '@shared/schema';
+import type { Position, RollChain, StockHolding, Tag } from '@shared/schema';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/use-auth';
 import { computePositionHash } from '@/lib/positionHash';
@@ -83,10 +83,28 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     staleTime: 30000,
   });
   
+  // Fetch position tags for all positions
+  const { data: positionTagsData } = useQuery<{ success: boolean; tagsByPosition: Record<string, Tag[]> }>({
+    queryKey: ['/api/position-tags/lookup', allHashes],
+    queryFn: async () => {
+      if (allHashes.length === 0) return { success: true, tagsByPosition: {} };
+      const res = await apiRequest('POST', '/api/position-tags/lookup', { positionHashes: allHashes });
+      return res.json();
+    },
+    enabled: isAuthenticated && allHashes.length > 0,
+    staleTime: 30000,
+  });
+  
   const getStrategyOverride = (posId: string): string | null => {
     const hash = positionHashes.get(posId);
     if (!hash || !strategyOverridesData?.overrides) return null;
     return strategyOverridesData.overrides[hash] || null;
+  };
+  
+  const getPositionTags = (posId: string): Tag[] => {
+    const hash = positionHashes.get(posId);
+    if (!hash || !positionTagsData?.tagsByPosition) return [];
+    return positionTagsData.tagsByPosition[hash] || [];
   };
   
   const commentCounts = useMemo(() => {
@@ -383,6 +401,44 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
       className: 'text-right',
     },
     ...(isAuthenticated ? [{
+      key: 'tags',
+      header: 'Tags',
+      accessor: (row: PositionWithDisplay) => {
+        const tags = getPositionTags(row.id);
+        if (tags.length === 0) {
+          return <span className="text-muted-foreground text-xs">—</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1 max-w-[150px]">
+            {tags.slice(0, 3).map((tag) => (
+              <Badge
+                key={tag.id}
+                variant="secondary"
+                className="text-xs px-1.5 py-0"
+                style={{ 
+                  backgroundColor: `${tag.color}20`,
+                  borderColor: tag.color,
+                  color: tag.color,
+                }}
+                data-testid={`tag-${row.id}-${tag.id}`}
+              >
+                {tag.name}
+              </Badge>
+            ))}
+            {tags.length > 3 && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0" data-testid={`tag-overflow-${row.id}`}>
+                +{tags.length - 3}
+              </Badge>
+            )}
+          </div>
+        );
+      },
+      sortValue: (row: PositionWithDisplay) => {
+        const tags = getPositionTags(row.id);
+        return tags.length;
+      },
+    }] as Column<PositionWithDisplay>[] : []),
+    ...(isAuthenticated ? [{
       key: 'notes',
       header: 'Actions',
       accessor: (row: Position) => {
@@ -456,7 +512,7 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
       sortValue: () => 0,
       className: 'text-center w-[80px]',
     }] as Column<PositionWithDisplay>[] : []),
-  ] as Column<PositionWithDisplay>[], [isAuthenticated, commentCountsData, rollChains, ungroupingId, restoringId, strategyOverridesData?.overrides]);
+  ] as Column<PositionWithDisplay>[], [isAuthenticated, commentCountsData, rollChains, ungroupingId, restoringId, strategyOverridesData?.overrides, positionTagsData?.tagsByPosition]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
