@@ -739,7 +739,7 @@ export function PositionDetailPanel({
                     </TooltipContent>
                   </Tooltip>
                   <p className={`font-semibold tabular-nums ${positionGreeks.totalDelta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {positionGreeks.totalDelta >= 0 ? '+' : ''}{positionGreeks.totalDelta.toFixed(0)}
+                    {positionGreeks.totalDelta >= 0 ? '+$' : '-$'}{Math.abs(positionGreeks.totalDelta).toFixed(0)}
                   </p>
                 </div>
                 
