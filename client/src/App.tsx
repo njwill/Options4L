@@ -481,12 +481,15 @@ function AppContent() {
               {activeTab === 'open' && <OpenPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
               {activeTab === 'closed' && <ClosedPositions positions={positions} rollChains={rollChains} onUngroupPosition={handleUngroupPosition} onDataChange={refreshData} />}
               {activeTab === 'transactions' && <TransactionHistory transactions={transactions} onGroupCreated={refreshData} />}
-              {activeTab === 'account' && <AccountSettings onDataChange={() => {
-                if (user) {
-                  setHasLoadedUserData(false);
-                  setLoadAttempts(0);
-                }
-              }} />}
+              {activeTab === 'account' && <AccountSettings 
+                onDataChange={() => {
+                  if (user) {
+                    setHasLoadedUserData(false);
+                    setLoadAttempts(0);
+                  }
+                }}
+                onFileUpload={handleFileUpload}
+              />}
             </div>
           </main>
 

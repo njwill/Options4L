@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Save, Clock, FileText, Trash2, Link2, Unlink, Check, Mail, Key, Loader2, Eye, EyeOff, ExternalLink } from 'lucide-react';
+import { Download, Save, Clock, FileText, Trash2, Link2, Unlink, Check, Mail, Key, Loader2, Eye, EyeOff, ExternalLink, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import { hexToNpub, truncateNpub } from '@/lib/nostr';
 import {
@@ -49,9 +49,10 @@ interface Upload {
 
 interface AccountSettingsProps {
   onDataChange?: () => void;
+  onFileUpload?: (file: File) => void;
 }
 
-export default function AccountSettings({ onDataChange }: AccountSettingsProps) {
+export default function AccountSettings({ onDataChange, onFileUpload }: AccountSettingsProps) {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -703,14 +704,38 @@ export default function AccountSettings({ onDataChange }: AccountSettingsProps) 
 
       {/* Upload History */}
       <Card data-testid="card-upload-history">
-        <CardHeader>
-          <CardTitle>Upload History</CardTitle>
-          <CardDescription>View your past file uploads</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle>Upload History</CardTitle>
+            <CardDescription>View your past file uploads</CardDescription>
+          </div>
+          {onFileUpload && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="relative"
+              data-testid="button-upload-new-file"
+            >
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onFileUpload(file);
+                  e.target.value = '';
+                }}
+                data-testid="input-file-account"
+              />
+              <Upload className="w-4 h-4 mr-2" />
+              Upload New File
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {uploads.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground" data-testid="text-no-uploads">
-              No uploads yet
+              No uploads yet. Click "Upload New File" above to get started.
             </div>
           ) : (
             <div className="space-y-2">
