@@ -195,13 +195,13 @@ export function PositionDetailPanel({
   }, [strategyOverride, position]);
 
   // Calculate if reclassification is relevant for this position
+  // Allow reclassifying any Short Call as Covered Call - user may own shares outside the uploaded data
   const canReclassifyAsCoveredCall = useMemo(() => {
     if (!position || !user || !positionHash) return false;
     const currentStrategy = strategyOverride || position.strategyType;
-    if (currentStrategy !== 'Short Call') return false;
-    if (matchingStockHolding && matchingStockHolding.totalShares >= 100) return true;
-    return false;
-  }, [position, user, positionHash, strategyOverride, matchingStockHolding]);
+    // Allow reclassifying Short Call to Covered Call (user owns underlying shares)
+    return currentStrategy === 'Short Call';
+  }, [position, user, positionHash, strategyOverride]);
 
   const canRevertToOriginal = useMemo(() => {
     return !!strategyOverride && user && positionHash;
@@ -318,7 +318,10 @@ export function PositionDetailPanel({
                       <div>
                         <p className="font-medium">Reclassify as Covered Call</p>
                         <p className="text-xs text-muted-foreground">
-                          You own {matchingStockHolding?.totalShares || 0} shares of {position.symbol}
+                          {matchingStockHolding && matchingStockHolding.totalShares >= 100 
+                            ? `You own ${matchingStockHolding.totalShares} shares of ${position.symbol}`
+                            : `Mark as covered if you own 100+ shares of ${position.symbol}`
+                          }
                         </p>
                       </div>
                     </DropdownMenuItem>
