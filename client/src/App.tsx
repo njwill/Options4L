@@ -18,8 +18,10 @@ import TermsOfService from '@/pages/TermsOfService';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { LivePriceCacheProvider } from '@/hooks/use-price-cache';
 import { LoginModal } from '@/components/LoginModal';
+import { SignupPromptModal } from '@/components/SignupPromptModal';
 import { UserMenu } from '@/components/UserMenu';
 import { ImportSessionDialog } from '@/components/ImportSessionDialog';
+import { useEngagementTracker } from '@/hooks/use-engagement-tracker';
 import { useToast } from '@/hooks/use-toast';
 import type { Position, Transaction, SummaryStats, RollChain } from '@shared/schema';
 
@@ -30,6 +32,7 @@ function AppContent() {
   const { toast } = useToast();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [positions, setPositions] = useState<Position[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -61,6 +64,41 @@ function AppContent() {
   useEffect(() => {
     isLoggedInRef.current = !!user;
   }, [user]);
+
+  // Engagement tracking for anonymous users with data
+  const hasAnonymousData = !user && positions.length > 0;
+  const { 
+    shouldShowPrompt, 
+    trackPageChange, 
+    markPromptShown, 
+    resetTracker 
+  } = useEngagementTracker({
+    clickThreshold: 5,
+    pageChangeThreshold: 2,
+    enabled: hasAnonymousData
+  });
+
+  // Track tab changes as page changes
+  useEffect(() => {
+    if (hasAnonymousData) {
+      trackPageChange(activeTab);
+    }
+  }, [activeTab, hasAnonymousData, trackPageChange]);
+
+  // Show signup prompt when engagement threshold is met
+  useEffect(() => {
+    if (shouldShowPrompt && hasAnonymousData && !showSignupPrompt && !showLoginModal) {
+      setShowSignupPrompt(true);
+      markPromptShown();
+    }
+  }, [shouldShowPrompt, hasAnonymousData, showSignupPrompt, showLoginModal, markPromptShown]);
+
+  // Reset engagement tracker when user logs in
+  useEffect(() => {
+    if (user) {
+      resetTracker();
+    }
+  }, [user, resetTracker]);
 
   // Load user's saved data from database after login
   const loadUserData = async (): Promise<boolean> => {
@@ -533,6 +571,11 @@ function AppContent() {
           </footer>
         </div>
         <LoginModal open={showLoginModal} onOpenChange={setShowLoginModal} />
+        <SignupPromptModal 
+          open={showSignupPrompt} 
+          onOpenChange={setShowSignupPrompt}
+          onSignUp={() => setShowLoginModal(true)}
+        />
         <ImportSessionDialog
           open={showImportDialog}
           onOpenChange={setShowImportDialog}
