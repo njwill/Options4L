@@ -938,6 +938,7 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
       />
 
       <DataTable
+        key={`open-positions-${JSON.stringify(strategyOverridesData?.overrides || {})}`}
         data={filteredPositions}
         columns={columns}
         keyExtractor={(row) => row.id}
