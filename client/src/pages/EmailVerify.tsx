@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,10 +12,11 @@ interface EmailVerifyProps {
 }
 
 export function EmailVerify({ token, isLinking = false, onComplete }: EmailVerifyProps) {
-  const { loginWithEmail, refreshUser, user } = useAuth();
+  const { loginWithEmail, refreshUser, user, isLoading } = useAuth();
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('Successfully signed in!');
+  const verificationAttemptedRef = useRef(false);
 
   useEffect(() => {
     const verifyToken = async () => {
@@ -24,6 +25,19 @@ export function EmailVerify({ token, isLinking = false, onComplete }: EmailVerif
         setErrorMessage('No verification token provided.');
         return;
       }
+
+      // Prevent duplicate verification attempts
+      if (verificationAttemptedRef.current) {
+        return;
+      }
+
+      // For linking flow, wait for auth to finish loading
+      if (isLinking && isLoading) {
+        return;
+      }
+
+      // Mark as attempted before making the request
+      verificationAttemptedRef.current = true;
 
       try {
         if (isLinking && user) {
@@ -43,6 +57,9 @@ export function EmailVerify({ token, isLinking = false, onComplete }: EmailVerif
           
           await refreshUser();
           setSuccessMessage('Email linked successfully!');
+        } else if (isLinking && !user) {
+          // Linking flow but user not logged in - this is an error
+          throw new Error('You must be logged in to link an email address.');
         } else {
           // Regular login flow
           await loginWithEmail(token);
@@ -69,7 +86,7 @@ export function EmailVerify({ token, isLinking = false, onComplete }: EmailVerif
     };
 
     verifyToken();
-  }, [token, isLinking, loginWithEmail, refreshUser, user, onComplete]);
+  }, [token, isLinking, isLoading, loginWithEmail, refreshUser, user, onComplete]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
