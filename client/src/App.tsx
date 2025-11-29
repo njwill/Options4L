@@ -407,7 +407,6 @@ function AppContent() {
     { id: 'closed' as TabType, label: 'Closed Positions', count: summary.closedPositionsCount },
     { id: 'transactions' as TabType, label: 'Transaction History', count: transactions.length },
     { id: 'analysis' as TabType, label: 'Analysis', count: rollChains.length > 0 ? rollChains.length : null },
-    ...(user ? [{ id: 'account' as TabType, label: 'Account', count: null }] : []),
   ];
 
   return (
