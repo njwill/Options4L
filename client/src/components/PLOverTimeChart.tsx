@@ -1,8 +1,15 @@
 import { useMemo } from 'react';
 import { Card } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine, Cell } from 'recharts';
 import type { Position } from '@shared/schema';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
+
+function parseDate(dateStr: string): Date {
+  if (dateStr.includes('-')) {
+    return new Date(dateStr);
+  }
+  return parse(dateStr, 'M/d/yyyy', new Date());
+}
 
 interface LivePLData {
   liveOpenPL: number;
@@ -16,61 +23,83 @@ interface PLOverTimeChartProps {
   livePLData?: LivePLData | null;
 }
 
+interface MonthlyData {
+  month: string;
+  monthLabel: string;
+  realizedPL: number;
+  unrealizedPL: number;
+  totalPL: number;
+  closedCount: number;
+  openCount: number;
+}
+
 export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps) {
   const chartData = useMemo(() => {
-    const closedPositions = positions
-      .filter((p) => p.status === 'closed' && p.exitDate)
-      .sort((a, b) => new Date(a.exitDate!).getTime() - new Date(b.exitDate!).getTime());
+    if (positions.length === 0) return [];
 
-    // Calculate total unrealized P/L from open positions
-    // Use live P/L if available, otherwise fall back to static values
+    const closedPositions = positions.filter((p) => p.status === 'closed' && p.exitDate);
     const openPositions = positions.filter((p) => p.status === 'open');
-    const unrealizedPL = livePLData?.hasLiveData 
-      ? livePLData.liveOpenPL 
-      : openPositions.reduce((sum, p) => sum + p.netPL, 0);
 
-    let cumulativeRealizedPL = 0;
-    const dataPoints = closedPositions.map((position) => {
-      const pl = position.realizedPL ?? position.netPL;
-      cumulativeRealizedPL += pl;
+    const monthlyMap = new Map<string, MonthlyData>();
+
+    closedPositions.forEach((position) => {
+      const exitDate = parseDate(position.exitDate!);
+      const monthKey = format(exitDate, 'yyyy-MM');
+      const monthLabel = format(exitDate, 'MMM yyyy');
       
-      // For historical points, totalPL equals realizedPL (no unrealized component yet)
-      // Unrealized P/L only applies to the current snapshot
-      return {
-        date: position.exitDate!,
-        realizedPL: Number(cumulativeRealizedPL.toFixed(2)),
-        totalPL: Number(cumulativeRealizedPL.toFixed(2)),
-        positionPL: Number(pl.toFixed(2)),
+      const existing = monthlyMap.get(monthKey) || {
+        month: monthKey,
+        monthLabel,
+        realizedPL: 0,
         unrealizedPL: 0,
-        symbol: position.symbol,
-        strategy: position.strategyType,
+        totalPL: 0,
+        closedCount: 0,
+        openCount: 0,
       };
+
+      const pl = position.realizedPL ?? position.netPL;
+      existing.realizedPL += pl;
+      existing.totalPL += pl;
+      existing.closedCount += 1;
+      
+      monthlyMap.set(monthKey, existing);
     });
 
-    // Add a "current" data point to show total P/L including unrealized from open positions
-    // This ensures the total P/L line extends to show current unrealized gains
+    const currentMonth = format(new Date(), 'yyyy-MM');
+    const currentMonthLabel = format(new Date(), 'MMM yyyy');
+    
     if (openPositions.length > 0) {
-      // Use today's date or the most recent open position entry date
-      const mostRecentOpenDate = openPositions.reduce((latest, p) => {
-        const entryDate = new Date(p.entryDate);
-        return entryDate > latest ? entryDate : latest;
-      }, new Date(0));
+      const unrealizedPL = livePLData?.hasLiveData 
+        ? livePLData.liveOpenPL 
+        : openPositions.reduce((sum, p) => sum + p.netPL, 0);
 
-      const currentDate = new Date();
-      const displayDate = currentDate > mostRecentOpenDate ? currentDate : mostRecentOpenDate;
+      const existing = monthlyMap.get(currentMonth) || {
+        month: currentMonth,
+        monthLabel: currentMonthLabel,
+        realizedPL: 0,
+        unrealizedPL: 0,
+        totalPL: 0,
+        closedCount: 0,
+        openCount: 0,
+      };
 
-      dataPoints.push({
-        date: displayDate.toISOString().split('T')[0],
-        realizedPL: Number(cumulativeRealizedPL.toFixed(2)),
-        totalPL: Number((cumulativeRealizedPL + unrealizedPL).toFixed(2)),
-        positionPL: 0,
-        unrealizedPL: Number(unrealizedPL.toFixed(2)),
-        symbol: 'Open Positions',
-        strategy: livePLData?.hasLiveData ? 'Live Unrealized' : 'Current Unrealized' as any,
-      });
+      existing.unrealizedPL = unrealizedPL;
+      existing.totalPL = existing.realizedPL + unrealizedPL;
+      existing.openCount = openPositions.length;
+      
+      monthlyMap.set(currentMonth, existing);
     }
 
-    return dataPoints;
+    const sortedData = Array.from(monthlyMap.values())
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(d => ({
+        ...d,
+        realizedPL: Number(d.realizedPL.toFixed(2)),
+        unrealizedPL: Number(d.unrealizedPL.toFixed(2)),
+        totalPL: Number(d.totalPL.toFixed(2)),
+      }));
+
+    return sortedData;
   }, [positions, livePLData]);
 
   const formatCurrency = (value: number) => {
@@ -82,65 +111,83 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
     }).format(value);
   };
 
-  const formatDate = (dateStr: string) => {
-    try {
-      return format(new Date(dateStr), 'MMM d');
-    } catch {
-      return dateStr;
+  const formatShortMonth = (monthLabel: string) => {
+    const parts = monthLabel.split(' ');
+    if (parts.length === 2) {
+      return parts[0];
     }
+    return monthLabel;
   };
 
   if (chartData.length === 0) {
     return (
       <Card className="p-6">
-        <h3 className="text-lg font-semibold mb-4">P/L Over Time</h3>
+        <h3 className="text-lg font-semibold mb-4">Monthly P/L Breakdown</h3>
         <div className="h-64 flex items-center justify-center text-muted-foreground">
-          No closed positions yet
+          No position data yet
         </div>
       </Card>
     );
   }
 
+  const hasUnrealized = chartData.some(d => d.unrealizedPL !== 0);
+
   return (
-    <Card className="p-6">
-      <h3 className="text-lg font-semibold mb-4">P/L Over Time</h3>
+    <Card className="p-6" data-testid="card-monthly-pl">
+      <h3 className="text-lg font-semibold mb-4">Monthly P/L Breakdown</h3>
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+        <BarChart data={chartData} stackOffset="sign">
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
           <XAxis
-            dataKey="date"
-            tickFormatter={formatDate}
+            dataKey="monthLabel"
+            tickFormatter={formatShortMonth}
             className="text-xs"
             stroke="hsl(var(--muted-foreground))"
+            tickLine={false}
+            axisLine={false}
           />
           <YAxis
             tickFormatter={formatCurrency}
             className="text-xs"
             stroke="hsl(var(--muted-foreground))"
+            tickLine={false}
+            axisLine={false}
           />
+          <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeOpacity={0.5} />
           <Tooltip
+            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
             content={({ active, payload }) => {
               if (active && payload && payload.length) {
-                const data = payload[0].payload;
+                const data = payload[0].payload as MonthlyData;
                 return (
-                  <div className="bg-card border rounded-lg shadow-lg p-3">
-                    <p className="text-sm font-medium mb-1">{formatDate(data.date)}</p>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      {data.symbol} - {data.strategy}
-                    </p>
-                    <p className={`text-sm font-semibold ${data.positionPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      Trade: {formatCurrency(data.positionPL)}
-                    </p>
-                    <div className="border-t mt-2 pt-2 space-y-1">
-                      <p className={`text-sm font-semibold ${data.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        Realized: {formatCurrency(data.realizedPL)}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Unrealized: {formatCurrency(data.unrealizedPL)}
-                      </p>
-                      <p className={`text-sm font-semibold ${data.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        Total: {formatCurrency(data.totalPL)}
-                      </p>
+                  <div className="bg-card border rounded-lg shadow-lg p-3 min-w-[180px]">
+                    <p className="text-sm font-medium mb-2 border-b pb-2">{data.monthLabel}</p>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-muted-foreground">Realized P/L</span>
+                        <span className={`text-sm font-medium tabular-nums ${data.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatCurrency(data.realizedPL)}
+                        </span>
+                      </div>
+                      {data.unrealizedPL !== 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-muted-foreground">Unrealized P/L</span>
+                          <span className={`text-sm font-medium tabular-nums ${data.unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(data.unrealizedPL)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center pt-1.5 border-t">
+                        <span className="text-xs font-medium">Total</span>
+                        <span className={`text-sm font-semibold tabular-nums ${data.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatCurrency(data.totalPL)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground pt-1">
+                        {data.closedCount > 0 && <span>{data.closedCount} closed</span>}
+                        {data.closedCount > 0 && data.openCount > 0 && <span> · </span>}
+                        {data.openCount > 0 && <span>{data.openCount} open</span>}
+                      </div>
                     </div>
                   </div>
                 );
@@ -151,40 +198,53 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
           <Legend 
             verticalAlign="top" 
             height={36}
-            content={({ payload }) => (
+            content={() => (
               <div className="flex justify-center gap-6 pb-2 text-sm">
-                {payload?.map((entry, index) => (
-                  <div key={`legend-${index}`} className="flex items-center gap-2">
-                    <div 
-                      className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: entry.color }}
-                    />
-                    <span className="text-muted-foreground">{entry.value}</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'hsl(142, 76%, 36%)' }} />
+                  <span className="text-muted-foreground">Profit</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'hsl(0, 84%, 60%)' }} />
+                  <span className="text-muted-foreground">Loss</span>
+                </div>
+                {hasUnrealized && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-sm border border-muted-foreground" style={{ backgroundColor: 'transparent', opacity: 0.6 }} />
+                    <span className="text-muted-foreground">Unrealized (stacked)</span>
                   </div>
-                ))}
+                )}
               </div>
             )}
           />
-          <Line
-            type="monotone"
+          <Bar
             dataKey="realizedPL"
             name="Realized P/L"
-            stroke="hsl(var(--primary))"
-            strokeWidth={2}
-            dot={{ fill: 'hsl(var(--primary))', r: 3 }}
-            activeDot={{ r: 5 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="totalPL"
-            name="Total P/L (Realized + Unrealized)"
-            stroke="hsl(var(--chart-2))"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            dot={{ fill: 'hsl(var(--chart-2))', r: 3 }}
-            activeDot={{ r: 5 }}
-          />
-        </LineChart>
+            radius={[2, 2, 0, 0]}
+          >
+            {chartData.map((entry, index) => (
+              <Cell 
+                key={`realized-${index}`} 
+                fill={entry.realizedPL >= 0 ? 'hsl(142, 76%, 36%)' : 'hsl(0, 84%, 60%)'}
+              />
+            ))}
+          </Bar>
+          {hasUnrealized && (
+            <Bar
+              dataKey="unrealizedPL"
+              name="Unrealized P/L"
+              radius={[2, 2, 0, 0]}
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`unrealized-${index}`} 
+                  fill={entry.unrealizedPL >= 0 ? 'hsl(142, 76%, 36%)' : 'hsl(0, 84%, 60%)'}
+                  fillOpacity={0.6}
+                />
+              ))}
+            </Bar>
+          )}
+        </BarChart>
       </ResponsiveContainer>
     </Card>
   );
