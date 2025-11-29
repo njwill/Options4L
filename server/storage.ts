@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, strategyOverrides, users, emailVerificationTokens, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type StrategyOverride, type User, type EmailVerificationToken } from '@shared/schema';
+import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, strategyOverrides, users, emailVerificationTokens, tags, positionTags, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type StrategyOverride, type User, type EmailVerificationToken, type Tag, type PositionTag } from '@shared/schema';
 import { eq, and, count, asc, desc, sql, max, inArray, lt } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
@@ -1184,6 +1184,240 @@ export async function getStrategyOverrideCounts(
   const result: Record<string, string> = {};
   for (const override of overrides) {
     result[override.positionHash] = override.overrideStrategy;
+  }
+  return result;
+}
+
+// ========== Tag Functions ==========
+
+/**
+ * Get all tags for a user
+ */
+export async function getUserTags(userId: string): Promise<Tag[]> {
+  return await db
+    .select()
+    .from(tags)
+    .where(eq(tags.userId, userId))
+    .orderBy(asc(tags.name));
+}
+
+/**
+ * Get a tag by ID (verify ownership)
+ */
+export async function getTagById(userId: string, tagId: string): Promise<Tag | null> {
+  const [tag] = await db
+    .select()
+    .from(tags)
+    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+    .limit(1);
+  
+  return tag || null;
+}
+
+/**
+ * Create a new tag
+ */
+export async function createTag(
+  userId: string,
+  name: string,
+  color?: string
+): Promise<Tag> {
+  const [tag] = await db
+    .insert(tags)
+    .values({
+      userId,
+      name: name.trim(),
+      ...(color ? { color } : {}),
+    })
+    .returning();
+  
+  return tag;
+}
+
+/**
+ * Update a tag (name and/or color)
+ */
+export async function updateTag(
+  userId: string,
+  tagId: string,
+  updates: { name?: string; color?: string }
+): Promise<Tag | null> {
+  const updateData: { name?: string; color?: string } = {};
+  if (updates.name !== undefined) updateData.name = updates.name.trim();
+  if (updates.color !== undefined) updateData.color = updates.color;
+  
+  if (Object.keys(updateData).length === 0) {
+    return await getTagById(userId, tagId);
+  }
+  
+  const [updated] = await db
+    .update(tags)
+    .set(updateData)
+    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+    .returning();
+  
+  return updated || null;
+}
+
+/**
+ * Delete a tag (also removes all position associations)
+ */
+export async function deleteTag(userId: string, tagId: string): Promise<boolean> {
+  const result = await db
+    .delete(tags)
+    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+    .returning();
+  
+  return result.length > 0;
+}
+
+// ========== Position Tag Functions ==========
+
+/**
+ * Add a tag to a position
+ */
+export async function addTagToPosition(
+  userId: string,
+  positionHash: string,
+  tagId: string
+): Promise<PositionTag | null> {
+  // Verify tag exists and belongs to user
+  const tag = await getTagById(userId, tagId);
+  if (!tag) {
+    return null;
+  }
+  
+  try {
+    const [positionTag] = await db
+      .insert(positionTags)
+      .values({
+        userId,
+        positionHash,
+        tagId,
+      })
+      .onConflictDoNothing()
+      .returning();
+    
+    // If already exists, fetch and return it
+    if (!positionTag) {
+      const [existing] = await db
+        .select()
+        .from(positionTags)
+        .where(and(
+          eq(positionTags.userId, userId),
+          eq(positionTags.positionHash, positionHash),
+          eq(positionTags.tagId, tagId)
+        ))
+        .limit(1);
+      return existing || null;
+    }
+    
+    return positionTag;
+  } catch (error: any) {
+    if (error.code === '23505') {
+      // Already exists, fetch and return it
+      const [existing] = await db
+        .select()
+        .from(positionTags)
+        .where(and(
+          eq(positionTags.userId, userId),
+          eq(positionTags.positionHash, positionHash),
+          eq(positionTags.tagId, tagId)
+        ))
+        .limit(1);
+      return existing || null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Remove a tag from a position
+ */
+export async function removeTagFromPosition(
+  userId: string,
+  positionHash: string,
+  tagId: string
+): Promise<boolean> {
+  const result = await db
+    .delete(positionTags)
+    .where(and(
+      eq(positionTags.userId, userId),
+      eq(positionTags.positionHash, positionHash),
+      eq(positionTags.tagId, tagId)
+    ))
+    .returning();
+  
+  return result.length > 0;
+}
+
+/**
+ * Get all tags for a specific position
+ */
+export async function getTagsForPosition(
+  userId: string,
+  positionHash: string
+): Promise<Tag[]> {
+  const results = await db
+    .select({
+      id: tags.id,
+      userId: tags.userId,
+      name: tags.name,
+      color: tags.color,
+      createdAt: tags.createdAt,
+    })
+    .from(positionTags)
+    .innerJoin(tags, eq(positionTags.tagId, tags.id))
+    .where(and(
+      eq(positionTags.userId, userId),
+      eq(positionTags.positionHash, positionHash)
+    ))
+    .orderBy(asc(tags.name));
+  
+  return results;
+}
+
+/**
+ * Get tags for multiple positions (bulk lookup)
+ * Returns a map of positionHash -> Tag[]
+ */
+export async function getTagsForPositions(
+  userId: string,
+  positionHashes: string[]
+): Promise<Record<string, Tag[]>> {
+  if (positionHashes.length === 0) {
+    return {};
+  }
+  
+  const results = await db
+    .select({
+      positionHash: positionTags.positionHash,
+      id: tags.id,
+      userId: tags.userId,
+      name: tags.name,
+      color: tags.color,
+      createdAt: tags.createdAt,
+    })
+    .from(positionTags)
+    .innerJoin(tags, eq(positionTags.tagId, tags.id))
+    .where(and(
+      eq(positionTags.userId, userId),
+      inArray(positionTags.positionHash, positionHashes)
+    ))
+    .orderBy(asc(tags.name));
+  
+  const result: Record<string, Tag[]> = {};
+  for (const row of results) {
+    if (!result[row.positionHash]) {
+      result[row.positionHash] = [];
+    }
+    result[row.positionHash].push({
+      id: row.id,
+      userId: row.userId,
+      name: row.name,
+      color: row.color,
+      createdAt: row.createdAt,
+    });
   }
   return result;
 }

@@ -437,3 +437,61 @@ export const deleteStrategyOverrideSchema = z.object({
 
 export type CreateStrategyOverrideInput = z.infer<typeof createStrategyOverrideSchema>;
 export type DeleteStrategyOverrideInput = z.infer<typeof deleteStrategyOverrideSchema>;
+
+// Tags table - stores user-defined custom tags for organizing positions
+export const tags = pgTable("tags", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 50 }).notNull(),
+  color: varchar("color", { length: 7 }).notNull().default("#6b7280"), // Hex color, default gray
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // Each user can only have one tag with a given name
+  userTagNameIdx: uniqueIndex("user_tag_name_idx").on(table.userId, table.name),
+}));
+
+export type Tag = typeof tags.$inferSelect;
+export type InsertTag = typeof tags.$inferInsert;
+
+// Zod schemas for tag validation
+export const createTagSchema = z.object({
+  name: z.string().min(1).max(50),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
+export const updateTagSchema = z.object({
+  name: z.string().min(1).max(50).optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
+export type CreateTagInput = z.infer<typeof createTagSchema>;
+export type UpdateTagInput = z.infer<typeof updateTagSchema>;
+
+// Position Tags junction table - links positions to tags
+export const positionTags = pgTable("position_tags", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  positionHash: varchar("position_hash", { length: 128 }).notNull(),
+  tagId: uuid("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  // Each position can only have each tag once
+  positionTagIdx: uniqueIndex("position_tag_idx").on(table.userId, table.positionHash, table.tagId),
+}));
+
+export type PositionTag = typeof positionTags.$inferSelect;
+export type InsertPositionTag = typeof positionTags.$inferInsert;
+
+// Zod schemas for position tag validation
+export const addPositionTagSchema = z.object({
+  positionHash: z.string().min(1),
+  tagId: z.string().uuid(),
+});
+
+export const removePositionTagSchema = z.object({
+  positionHash: z.string().min(1),
+  tagId: z.string().uuid(),
+});
+
+export type AddPositionTagInput = z.infer<typeof addPositionTagSchema>;
+export type RemovePositionTagInput = z.infer<typeof removePositionTagSchema>;

@@ -38,6 +38,14 @@ import {
   upsertStrategyOverride,
   deleteStrategyOverride,
   getStrategyOverrideCounts,
+  getUserTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  addTagToPosition,
+  removeTagFromPosition,
+  getTagsForPosition,
+  getTagsForPositions,
 } from "./storage";
 import { 
   insertCommentSchema, 
@@ -48,6 +56,9 @@ import {
   deleteManualGroupingSchema,
   createStrategyOverrideSchema,
   deleteStrategyOverrideSchema,
+  createTagSchema,
+  updateTagSchema,
+  addPositionTagSchema,
 } from "@shared/schema";
 import "./types";
 
@@ -1727,6 +1738,238 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to delete strategy override',
+      });
+    }
+  });
+
+  // ========== Tag Routes ==========
+
+  // Get all tags for the authenticated user
+  app.get('/api/tags', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const userTags = await getUserTags(req.user.id);
+      return res.json({ success: true, tags: userTags });
+    } catch (error) {
+      console.error('Get tags error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get tags',
+      });
+    }
+  });
+
+  // Create a new tag
+  app.post('/api/tags', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = createTagSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          message: validation.error.errors[0]?.message || 'Invalid request',
+        });
+      }
+
+      const { name, color } = validation.data;
+      const tag = await createTag(req.user.id, name, color);
+
+      return res.json({ success: true, tag });
+    } catch (error: any) {
+      console.error('Create tag error:', error);
+      // Handle unique constraint violation
+      if (error.code === '23505') {
+        return res.status(400).json({
+          success: false,
+          message: 'A tag with this name already exists',
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to create tag',
+      });
+    }
+  });
+
+  // Update a tag
+  app.patch('/api/tags/:tagId', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { tagId } = req.params;
+      const validation = updateTagSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          message: validation.error.errors[0]?.message || 'Invalid request',
+        });
+      }
+
+      const updated = await updateTag(req.user.id, tagId, validation.data);
+      if (!updated) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tag not found or you do not have permission to update it',
+        });
+      }
+
+      return res.json({ success: true, tag: updated });
+    } catch (error: any) {
+      console.error('Update tag error:', error);
+      if (error.code === '23505') {
+        return res.status(400).json({
+          success: false,
+          message: 'A tag with this name already exists',
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update tag',
+      });
+    }
+  });
+
+  // Delete a tag
+  app.delete('/api/tags/:tagId', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { tagId } = req.params;
+      const success = await deleteTag(req.user.id, tagId);
+
+      if (!success) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tag not found or you do not have permission to delete it',
+        });
+      }
+
+      return res.json({ success: true, message: 'Tag deleted' });
+    } catch (error) {
+      console.error('Delete tag error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to delete tag',
+      });
+    }
+  });
+
+  // ========== Position Tag Routes ==========
+
+  // Add a tag to a position
+  app.post('/api/position-tags', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const validation = addPositionTagSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          message: validation.error.errors[0]?.message || 'Invalid request',
+        });
+      }
+
+      const { positionHash, tagId } = validation.data;
+      const positionTag = await addTagToPosition(req.user.id, positionHash, tagId);
+
+      if (!positionTag) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tag not found or you do not have permission to use it',
+        });
+      }
+
+      return res.json({ success: true, positionTag });
+    } catch (error) {
+      console.error('Add position tag error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to add tag to position',
+      });
+    }
+  });
+
+  // Remove a tag from a position
+  app.delete('/api/position-tags/:positionHash/:tagId', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positionHash, tagId } = req.params;
+      const success = await removeTagFromPosition(req.user.id, positionHash, tagId);
+
+      if (!success) {
+        return res.status(404).json({
+          success: false,
+          message: 'Position tag not found or you do not have permission to remove it',
+        });
+      }
+
+      return res.json({ success: true, message: 'Tag removed from position' });
+    } catch (error) {
+      console.error('Remove position tag error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to remove tag from position',
+      });
+    }
+  });
+
+  // Get tags for a specific position
+  app.get('/api/position-tags/:positionHash', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positionHash } = req.params;
+      const positionTagsList = await getTagsForPosition(req.user.id, positionHash);
+
+      return res.json({ success: true, tags: positionTagsList });
+    } catch (error) {
+      console.error('Get position tags error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get position tags',
+      });
+    }
+  });
+
+  // Bulk lookup: Get tags for multiple positions
+  app.post('/api/position-tags/lookup', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positionHashes } = req.body;
+      if (!Array.isArray(positionHashes)) {
+        return res.status(400).json({
+          success: false,
+          message: 'positionHashes must be an array',
+        });
+      }
+
+      const tagsMap = await getTagsForPositions(req.user.id, positionHashes);
+      return res.json({ success: true, tags: tagsMap });
+    } catch (error) {
+      console.error('Lookup position tags error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to lookup position tags',
       });
     }
   });
