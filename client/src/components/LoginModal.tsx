@@ -30,7 +30,7 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasNostrExtension, setHasNostrExtension] = useState(false);
   const [isCheckingExtension, setIsCheckingExtension] = useState(true);
-  const [activeTab, setActiveTab] = useState<AuthMethod>('nostr');
+  const [activeTab, setActiveTab] = useState<AuthMethod>('email');
   
   // Email-specific state
   const [email, setEmail] = useState('');
