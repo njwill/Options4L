@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
@@ -15,14 +16,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { StrategyBadge } from './StrategyBadge';
 import { RollChainTimeline } from './RollChainTimeline';
-import type { Position, RollChain, StockHolding, StrategyType } from '@shared/schema';
+import type { Position, RollChain, StockHolding, StrategyType, Tag } from '@shared/schema';
 import { format } from 'date-fns';
 import { usePriceCache } from '@/hooks/use-price-cache';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Package, ChevronDown, RefreshCw, Shield, Undo2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Activity, HelpCircle, Package, ChevronDown, RefreshCw, Shield, Undo2, Tags, Plus, X, Check, Loader2 } from 'lucide-react';
 import { 
   calculateGreeks, 
   calculatePositionGreeks, 
@@ -32,7 +38,8 @@ import {
   formatTheta,
   formatVega
 } from '@/lib/blackScholes';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 interface PositionDetailPanelProps {
   position: Position | null;
@@ -60,8 +67,91 @@ export function PositionDetailPanel({
   const { toast } = useToast();
   const [totalUnrealizedPL, setTotalUnrealizedPL] = useState<number | null>(null);
   const [isUpdatingStrategy, setIsUpdatingStrategy] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [isTagPopoverOpen, setIsTagPopoverOpen] = useState(false);
 
   const legPrices = position ? (getPositionPrices(position.id) || {}) : {};
+
+  // Fetch all user tags
+  const { data: userTagsData, isLoading: isLoadingUserTags } = useQuery<{ success: boolean; tags: Tag[] }>({
+    queryKey: ['/api/tags'],
+    enabled: !!user && isOpen,
+  });
+
+  // Fetch tags for this position
+  const { data: positionTagsData, isLoading: isLoadingPositionTags } = useQuery<{ success: boolean; tags: Tag[] }>({
+    queryKey: ['/api/position-tags', positionHash],
+    enabled: !!user && !!positionHash && isOpen,
+  });
+
+  const userTags = userTagsData?.tags || [];
+  const positionTags = positionTagsData?.tags || [];
+  const positionTagIds = new Set(positionTags.map(t => t.id));
+
+  // Create tag mutation
+  const createTagMutation = useMutation({
+    mutationFn: async (data: { name: string; color?: string }) => {
+      const response = await apiRequest('POST', '/api/tags', data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ['/api/tags'] });
+        setNewTagName('');
+        toast({ title: 'Tag created', description: `"${data.tag.name}" tag created successfully` });
+        // Automatically add the new tag to this position
+        if (positionHash && data.tag) {
+          addTagMutation.mutate({ tagId: data.tag.id });
+        }
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: 'Error', description: error.message || 'Failed to create tag', variant: 'destructive' });
+    },
+  });
+
+  // Add tag to position mutation
+  const addTagMutation = useMutation({
+    mutationFn: async (data: { tagId: string }) => {
+      const response = await apiRequest('POST', '/api/position-tags', { positionHash, tagId: data.tagId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/position-tags', positionHash] });
+      queryClient.invalidateQueries({ queryKey: ['/api/position-tags/lookup'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Error', description: error.message || 'Failed to add tag', variant: 'destructive' });
+    },
+  });
+
+  // Remove tag from position mutation
+  const removeTagMutation = useMutation({
+    mutationFn: async (tagId: string) => {
+      const response = await apiRequest('DELETE', `/api/position-tags/${encodeURIComponent(positionHash!)}/${tagId}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/position-tags', positionHash] });
+      queryClient.invalidateQueries({ queryKey: ['/api/position-tags/lookup'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Error', description: error.message || 'Failed to remove tag', variant: 'destructive' });
+    },
+  });
+
+  const handleCreateTag = () => {
+    if (!newTagName.trim()) return;
+    createTagMutation.mutate({ name: newTagName.trim() });
+  };
+
+  const handleToggleTag = (tag: Tag) => {
+    if (positionTagIds.has(tag.id)) {
+      removeTagMutation.mutate(tag.id);
+    } else {
+      addTagMutation.mutate({ tagId: tag.id });
+    }
+  };
 
   // Calculate Greeks for each leg
   const legGreeks = useMemo(() => {
@@ -413,6 +503,146 @@ export function PositionDetailPanel({
               </div>
             )}
           </div>
+
+          {/* Tags Section - Only show for authenticated users */}
+          {user && positionHash && (
+            <div className="p-4 border rounded-md bg-muted/30">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Tags className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold">Tags</h3>
+                </div>
+                <Popover open={isTagPopoverOpen} onOpenChange={setIsTagPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      data-testid="button-manage-tags"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Tag
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="end">
+                    <div className="space-y-3">
+                      <div className="font-medium text-sm">Add Tags</div>
+                      
+                      {/* Create new tag */}
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="New tag name..."
+                          value={newTagName}
+                          onChange={(e) => setNewTagName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleCreateTag();
+                            }
+                          }}
+                          className="h-8 text-sm"
+                          data-testid="input-new-tag-name"
+                        />
+                        <Button 
+                          size="sm" 
+                          onClick={handleCreateTag}
+                          disabled={!newTagName.trim() || createTagMutation.isPending}
+                          className="h-8 px-2"
+                          data-testid="button-create-tag"
+                        >
+                          {createTagMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Existing tags list */}
+                      {isLoadingUserTags ? (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : userTags.length > 0 ? (
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {userTags.map((tag) => {
+                            const isSelected = positionTagIds.has(tag.id);
+                            const isPending = addTagMutation.isPending || removeTagMutation.isPending;
+                            return (
+                              <button
+                                key={tag.id}
+                                onClick={() => handleToggleTag(tag)}
+                                disabled={isPending}
+                                className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors ${
+                                  isSelected 
+                                    ? 'bg-primary/10 text-primary hover:bg-primary/20' 
+                                    : 'hover:bg-muted'
+                                }`}
+                                data-testid={`tag-option-${tag.id}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: tag.color }}
+                                  />
+                                  <span>{tag.name}</span>
+                                </div>
+                                {isSelected && <Check className="h-4 w-4" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground py-2">
+                          No tags yet. Create your first tag above.
+                        </p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Display current position tags */}
+              {isLoadingPositionTags ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Loading tags...</span>
+                </div>
+              ) : positionTags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {positionTags.map((tag) => (
+                    <Badge
+                      key={tag.id}
+                      variant="secondary"
+                      className="flex items-center gap-1 pl-2 pr-1 py-1"
+                      style={{ 
+                        backgroundColor: `${tag.color}20`,
+                        borderColor: tag.color,
+                        color: tag.color,
+                      }}
+                      data-testid={`tag-badge-${tag.id}`}
+                    >
+                      <div 
+                        className="w-2 h-2 rounded-full mr-1" 
+                        style={{ backgroundColor: tag.color }}
+                      />
+                      {tag.name}
+                      <button
+                        onClick={() => removeTagMutation.mutate(tag.id)}
+                        className="ml-1 hover:bg-black/10 rounded p-0.5"
+                        data-testid={`button-remove-tag-${tag.id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No tags applied. Click "Add Tag" to organize this position.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Stock Context Section */}
           {showStockContext && matchingStockHolding && (
