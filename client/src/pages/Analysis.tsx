@@ -15,7 +15,7 @@ import { StrategyBadge } from '@/components/StrategyBadge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import type { Position, RollChain } from '@shared/schema';
-import { format, differenceInDays, parseISO } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { 
   RotateCcw, 
   Calendar, 
@@ -81,10 +81,12 @@ export default function Analysis({ positions, rollChains }: AnalysisProps) {
       // Find all positions in this chain
       const chainPositions = positions.filter(p => p.rollChainId === chain.chainId);
       
-      // Calculate days extended
-      const firstDate = parseISO(chain.firstEntryDate);
-      const lastDate = chain.lastExitDate ? parseISO(chain.lastExitDate) : new Date();
-      const daysExtended = differenceInDays(lastDate, firstDate);
+      // Calculate days extended (dates may be in MM/DD/YYYY format, not ISO)
+      const firstDate = new Date(chain.firstEntryDate);
+      const lastDate = chain.lastExitDate ? new Date(chain.lastExitDate) : new Date();
+      const daysExtended = isNaN(firstDate.getTime()) || isNaN(lastDate.getTime()) 
+        ? 0 
+        : differenceInDays(lastDate, firstDate);
       
       // Calculate live P/L for open positions in chain
       let currentLivePL: number | null = null;
