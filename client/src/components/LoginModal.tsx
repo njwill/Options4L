@@ -234,10 +234,6 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AuthMethod)}>
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="nostr" data-testid="tab-nostr" className="flex items-center gap-2">
-              <Key className="w-4 h-4" />
-              NOSTR
-            </TabsTrigger>
             <TabsTrigger 
               value="email" 
               data-testid="tab-email" 
@@ -246,6 +242,10 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
             >
               <Mail className="w-4 h-4" />
               Email
+            </TabsTrigger>
+            <TabsTrigger value="nostr" data-testid="tab-nostr" className="flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              NOSTR
             </TabsTrigger>
           </TabsList>
 
