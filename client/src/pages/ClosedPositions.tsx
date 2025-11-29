@@ -83,11 +83,6 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     staleTime: 30000,
   });
   
-  // Create a version key that changes when overrides content changes
-  // Don't use useMemo here - we want this to be recomputed on every render
-  // so that any change in override data triggers column recreation
-  const overridesVersion = JSON.stringify(strategyOverridesData?.overrides || {});
-  
   const getStrategyOverride = (posId: string): string | null => {
     const hash = positionHashes.get(posId);
     if (!hash || !strategyOverridesData?.overrides) return null;
@@ -225,21 +220,41 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     return Array.from(new Set(closedPositions.map((p) => p.symbol))).sort();
   }, [closedPositions]);
 
+  // Extended position type with computed display strategy
+  type PositionWithDisplay = Position & { 
+    displayStrategy: string;
+    hasOverride: boolean;
+  };
+
+  // Enrich positions with their display strategy (from override or original)
+  // This moves the override lookup into the data layer so it updates properly
+  const positionsWithDisplayStrategy = useMemo((): PositionWithDisplay[] => {
+    return closedPositions.map((position) => {
+      const hash = positionHashes.get(position.id);
+      const override = hash && strategyOverridesData?.overrides ? strategyOverridesData.overrides[hash] : null;
+      return {
+        ...position,
+        displayStrategy: override || position.strategyType,
+        hasOverride: !!override,
+      };
+    });
+  }, [closedPositions, positionHashes, strategyOverridesData?.overrides]);
+
   const filteredPositions = useMemo(() => {
-    return closedPositions.filter((position) => {
+    return positionsWithDisplayStrategy.filter((position) => {
       const matchesSearch =
         searchQuery === '' ||
         position.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        position.strategyType.toLowerCase().includes(searchQuery.toLowerCase());
+        position.displayStrategy.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesStrategy =
-        strategyFilter === 'all' || position.strategyType === strategyFilter;
+        strategyFilter === 'all' || position.displayStrategy === strategyFilter;
 
       const matchesSymbol = symbolFilter === 'all' || position.symbol === symbolFilter;
 
       return matchesSearch && matchesStrategy && matchesSymbol;
     });
-  }, [closedPositions, searchQuery, strategyFilter, symbolFilter]);
+  }, [positionsWithDisplayStrategy, searchQuery, strategyFilter, symbolFilter]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -263,28 +278,26 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
     return rollChains.find((chain) => chain.chainId === position.rollChainId) || null;
   };
 
-  const columns: Column<Position>[] = useMemo(() => [
+  const columns: Column<PositionWithDisplay>[] = useMemo(() => [
     {
       key: 'symbol',
       header: 'Symbol',
-      accessor: (row: Position) => <span className="font-medium">{row.symbol}</span>,
-      sortValue: (row: Position) => row.symbol,
+      accessor: (row: PositionWithDisplay) => <span className="font-medium">{row.symbol}</span>,
+      sortValue: (row: PositionWithDisplay) => row.symbol,
     },
     {
       key: 'strategy',
       header: 'Strategy',
-      accessor: (row: Position) => {
-        const override = getStrategyOverride(row.id);
-        const displayStrategy = override || row.strategyType;
+      accessor: (row: PositionWithDisplay) => {
         return (
           <div className="flex items-center gap-1.5">
-            <StrategyBadge strategy={displayStrategy as import('@shared/schema').StrategyType} />
-            {override && (
+            <StrategyBadge strategy={row.displayStrategy as import('@shared/schema').StrategyType} />
+            {row.hasOverride && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 border-green-300 text-green-600 dark:border-green-700 dark:text-green-400">
                 Reclassified
               </Badge>
             )}
-            {!override && row.isManuallyGrouped && (
+            {!row.hasOverride && row.isManuallyGrouped && (
               <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400">
                 Manual
               </Badge>
@@ -292,7 +305,7 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
           </div>
         );
       },
-      sortValue: (row: Position) => getStrategyOverride(row.id) || row.strategyType,
+      sortValue: (row: PositionWithDisplay) => row.displayStrategy,
     },
     {
       key: 'entryDate',
@@ -442,8 +455,8 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
       },
       sortValue: () => 0,
       className: 'text-center w-[80px]',
-    }] as Column<Position>[] : []),
-  ] as Column<Position>[], [overridesVersion, isAuthenticated, commentCountsData, rollChains, ungroupingId, restoringId]);
+    }] as Column<PositionWithDisplay>[] : []),
+  ] as Column<PositionWithDisplay>[], [isAuthenticated, commentCountsData, rollChains, ungroupingId, restoringId, strategyOverridesData?.overrides]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -475,7 +488,6 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
       />
 
       <DataTable
-        key={overridesVersion}
         data={filteredPositions}
         columns={columns}
         keyExtractor={(row) => row.id}
