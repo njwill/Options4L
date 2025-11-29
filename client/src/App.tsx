@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { queryClient } from "./lib/queryClient";
+import { queryClient, apiRequest } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
-import { Upload, ExternalLink, Key } from 'lucide-react';
+import { ExternalLink, Key, RefreshCw, X } from 'lucide-react';
 import { Route, Switch, useLocation, useSearch } from 'wouter';
+import { format } from 'date-fns';
 import Dashboard from '@/pages/Dashboard';
 import OpenPositions from '@/pages/OpenPositions';
 import ClosedPositions from '@/pages/ClosedPositions';
@@ -17,7 +19,7 @@ import { EmailVerify } from '@/pages/EmailVerify';
 import PrivacyPolicy from '@/pages/PrivacyPolicy';
 import TermsOfService from '@/pages/TermsOfService';
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
-import { LivePriceCacheProvider } from '@/hooks/use-price-cache';
+import { LivePriceCacheProvider, usePriceCache } from '@/hooks/use-price-cache';
 import { LoginModal } from '@/components/LoginModal';
 import { SignupPromptModal } from '@/components/SignupPromptModal';
 import { UserMenu } from '@/components/UserMenu';
@@ -55,6 +57,17 @@ function AppContent() {
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
   const [loadAttempts, setLoadAttempts] = useState(0);
   const MAX_LOAD_ATTEMPTS = 3;
+  
+  // Live prices state
+  const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
+  const { 
+    setPositionPrices, 
+    clearAllPrices, 
+    hasCachedPrices,
+    lastRefreshTime,
+    setLastRefreshTime 
+  } = usePriceCache();
   
   // Ref to track login state for race condition protection
   const isLoggedInRef = useRef(false);
@@ -401,6 +414,113 @@ function AppContent() {
     await refreshData();
   };
 
+  // Get open positions for live price fetching
+  const openPositions = positions.filter(p => p.status === 'open');
+
+  // Build leg requests for options chain API (from all open positions)
+  const buildLegRequests = () => {
+    const legs: { symbol: string; strike: number; expiration: string; type: 'call' | 'put'; legId: string }[] = [];
+    
+    for (const pos of openPositions) {
+      if (pos.legs && Array.isArray(pos.legs)) {
+        for (let i = 0; i < pos.legs.length; i++) {
+          const leg = pos.legs[i];
+          if (leg && leg.strike && leg.expiration && leg.optionType) {
+            legs.push({
+              symbol: pos.symbol,
+              strike: leg.strike,
+              expiration: leg.expiration,
+              type: leg.optionType.toLowerCase() as 'call' | 'put',
+              legId: `${pos.id}-leg-${i}`,
+            });
+          }
+        }
+      }
+    }
+    
+    return legs;
+  };
+
+  // Fetch live quotes for all open positions
+  const fetchLiveQuotes = async () => {
+    if (!user) {
+      toast({
+        title: 'Sign in required',
+        description: 'Please sign in to fetch live option prices.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (openPositions.length === 0) {
+      toast({
+        title: 'No open positions',
+        description: 'There are no open positions to fetch prices for.',
+      });
+      return;
+    }
+    
+    setIsLoadingQuotes(true);
+    setQuotesError(null);
+    
+    try {
+      // Build leg requests for options chain
+      const legRequests = buildLegRequests();
+      
+      // Fetch options chain data with Greeks (groups by symbol internally)
+      if (legRequests.length > 0) {
+        const chainResponse = await apiRequest('POST', '/api/options/chain', { legs: legRequests });
+        const chainData = await chainResponse.json();
+        
+        if (chainData.success && chainData.optionData) {
+          // Write prices to shared cache grouped by position ID
+          const pricesByPosition: Record<string, Record<string, any>> = {};
+          Object.entries(chainData.optionData).forEach(([legId, legData]) => {
+            const positionId = legId.split('-leg-')[0];
+            if (!pricesByPosition[positionId]) {
+              pricesByPosition[positionId] = {};
+            }
+            pricesByPosition[positionId][legId] = legData;
+          });
+          
+          Object.entries(pricesByPosition).forEach(([positionId, prices]) => {
+            setPositionPrices(positionId, prices as any);
+          });
+          
+          setLastRefreshTime(new Date());
+          
+          toast({
+            title: 'Prices Updated',
+            description: `Live prices fetched for ${openPositions.length} position${openPositions.length === 1 ? '' : 's'}.`,
+          });
+        } else {
+          throw new Error(chainData.error || 'Failed to fetch option prices');
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching live quotes:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch prices';
+      setQuotesError(errorMessage);
+      toast({
+        title: 'Price Fetch Failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingQuotes(false);
+    }
+  };
+
+  // Clear all live prices
+  const handleClearPrices = () => {
+    clearAllPrices();
+    setQuotesError(null);
+    toast({
+      title: 'Prices Cleared',
+      description: 'Live price data has been cleared.',
+    });
+  };
+
   const tabs = [
     { id: 'dashboard' as TabType, label: 'Dashboard', count: null },
     { id: 'open' as TabType, label: 'Open Positions', count: summary.openPositionsCount },
@@ -434,26 +554,55 @@ function AppContent() {
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 </Button>
-                {positions.length > 0 && (
-                  <label htmlFor="file-upload-header">
-                    <Button variant="outline" asChild data-testid="button-upload-new">
-                      <span className="cursor-pointer">
-                        <Upload className="w-4 h-4 mr-2" />
-                        Upload New File
-                      </span>
-                    </Button>
-                    <input
-                      id="file-upload-header"
-                      type="file"
-                      className="hidden"
-                      accept=".csv,.xlsx"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleFileUpload(file);
-                      }}
-                      data-testid="input-file-header"
-                    />
-                  </label>
+                {openPositions.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    {!hasCachedPrices() ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={fetchLiveQuotes}
+                            disabled={isLoadingQuotes || !user}
+                            data-testid="button-get-prices"
+                          >
+                            <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
+                            {isLoadingQuotes ? 'Loading...' : 'Get Live Prices'}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Fetch live option prices from Yahoo Finance</p>
+                          {!user && (
+                            <p className="text-xs text-muted-foreground mt-1">Sign in to fetch prices</p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleClearPrices}
+                              data-testid="button-clear-prices"
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              Clear Live Prices
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Clear cached live prices</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        {lastRefreshTime && (
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            Updated {format(lastRefreshTime, 'h:mm a')}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {!user ? (
                   <Button 

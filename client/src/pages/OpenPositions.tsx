@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink, RefreshCw, AlertCircle, X, Activity, Redo2 } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, Activity, Redo2 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
@@ -77,16 +77,14 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
   const [ungroupingId, setUngroupingId] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   
-  // Live price state
+  // Live price state (populated from shared cache)
   const [liveQuotes, setLiveQuotes] = useState<Record<string, StockQuote>>({});
   const [optionData, setOptionData] = useState<Record<string, OptionLegData>>({});
-  const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
-  const [quotesError, setQuotesError] = useState<string | null>(null);
   
   const { user } = useAuth();
   const isAuthenticated = !!user;
   const { toast } = useToast();
-  const { setPositionPrices, getPositionPrices, clearAllPrices, lastRefreshTime, setLastRefreshTime } = usePriceCache();
+  const { getPositionPrices, lastRefreshTime, cacheVersion } = usePriceCache();
 
   const openPositions = positions.filter((p) => p.status === 'open');
   
@@ -96,7 +94,7 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     [openPositions]
   );
   
-  // Hydrate prices from cache on mount/remount
+  // Hydrate prices from cache on mount/remount and when prices are refreshed
   useEffect(() => {
     if (openPositions.length === 0) return;
     
@@ -130,8 +128,12 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
     if (hasAnyData) {
       setOptionData(cachedOptionData);
       setLiveQuotes(cachedQuotes);
+    } else {
+      // Clear local state if cache was cleared
+      setOptionData({});
+      setLiveQuotes({});
     }
-  }, [openPositionIds, getPositionPrices]);
+  }, [openPositionIds, getPositionPrices, cacheVersion]);
   
   useEffect(() => {
     async function computeHashes() {
@@ -285,161 +287,6 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
       });
     } finally {
       setRestoringId(null);
-    }
-  };
-  
-  // Build leg requests from positions for options chain API
-  const buildLegRequests = () => {
-    const legs: { symbol: string; strike: number; expiration: string; type: 'call' | 'put'; legId: string }[] = [];
-    
-    for (const pos of openPositions) {
-      if (pos.legs && Array.isArray(pos.legs)) {
-        for (let i = 0; i < pos.legs.length; i++) {
-          const leg = pos.legs[i];
-          if (leg && leg.strike && leg.expiration && leg.optionType) {
-            legs.push({
-              symbol: pos.symbol,
-              strike: leg.strike,
-              expiration: leg.expiration,
-              type: leg.optionType.toLowerCase() as 'call' | 'put',
-              legId: `${pos.id}-leg-${i}`,
-            });
-          }
-        }
-      }
-    }
-    
-    return legs;
-  };
-
-  // Fetch live quotes for underlying symbols and options chain
-  const fetchLiveQuotes = async () => {
-    if (!isAuthenticated) {
-      toast({
-        title: 'Sign in required',
-        description: 'Please sign in to fetch live option prices.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    const uniqueSymbols = Array.from(new Set(openPositions.map((p) => p.symbol)));
-    if (uniqueSymbols.length === 0) return;
-    
-    setIsLoadingQuotes(true);
-    setQuotesError(null);
-    
-    const allErrors: string[] = [];
-    
-    try {
-      // Build leg requests for options chain
-      const legRequests = buildLegRequests();
-      
-      // Fetch options chain data with Greeks (groups by symbol internally)
-      if (legRequests.length > 0) {
-        const chainResponse = await apiRequest('POST', '/api/options/chain', { legs: legRequests });
-        const chainData = await chainResponse.json();
-        
-        if (chainData.success && chainData.optionData) {
-          setOptionData(chainData.optionData);
-          
-          // Write prices to shared cache grouped by position ID
-          const pricesByPosition: Record<string, Record<string, OptionLegData>> = {};
-          Object.entries(chainData.optionData as Record<string, OptionLegData>).forEach(([legId, legData]) => {
-            const positionId = legId.split('-leg-')[0];
-            if (!pricesByPosition[positionId]) {
-              pricesByPosition[positionId] = {};
-            }
-            pricesByPosition[positionId][legId] = legData;
-          });
-          
-          Object.entries(pricesByPosition).forEach(([positionId, prices]) => {
-            setPositionPrices(positionId, prices as any);
-          });
-          
-          // Extract underlying prices from options data
-          const underlyingPrices: Record<string, StockQuote> = {};
-          Object.values(chainData.optionData as Record<string, OptionLegData>).forEach((leg) => {
-            if (leg.underlyingPrice && !underlyingPrices[leg.symbol]) {
-              underlyingPrices[leg.symbol] = {
-                symbol: leg.symbol,
-                price: leg.underlyingPrice,
-                change: 0,
-                changePercent: '0',
-                previousClose: 0,
-                latestTradingDay: '',
-              };
-            }
-          });
-          setLiveQuotes(underlyingPrices);
-        }
-        
-        if (chainData.errors && chainData.errors.length > 0) {
-          allErrors.push(...chainData.errors);
-          if (chainData.errors.some((e: string) => e.includes('Rate limit'))) {
-            setQuotesError('API rate limit reached. Try again in a minute.');
-          }
-        }
-        
-        if (!chainData.success && chainData.message) {
-          setQuotesError(chainData.message);
-        }
-      } else {
-        // No option legs, just fetch stock quotes for stock positions
-        const allQuotes: Record<string, StockQuote> = {};
-        
-        for (let i = 0; i < uniqueSymbols.length; i += 5) {
-          const batch = uniqueSymbols.slice(i, i + 5);
-          const response = await apiRequest('POST', '/api/options/quotes', { symbols: batch });
-          const data = await response.json();
-          
-          if (data.success && data.quotes) {
-            Object.assign(allQuotes, data.quotes);
-          }
-          
-          if (data.errors && data.errors.length > 0) {
-            allErrors.push(...data.errors);
-            if (data.errors.some((e: string) => e.includes('Rate limit'))) {
-              setQuotesError('API rate limit reached. Try again in a minute.');
-              break;
-            }
-          }
-          
-          if (!data.success && data.message) {
-            setQuotesError(data.message);
-            break;
-          }
-          
-          if (i + 5 < uniqueSymbols.length) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
-        
-        setLiveQuotes(allQuotes);
-      }
-      
-      setLastRefreshTime(new Date());
-      
-      const symbolCount = uniqueSymbols.length;
-      const legCount = legRequests.length;
-      
-      toast({
-        title: 'Market data updated',
-        description: legCount > 0 
-          ? `Fetched prices for ${legCount} option leg(s) across ${symbolCount} symbol(s)`
-          : `Fetched prices for ${symbolCount} symbol(s)`,
-      });
-    } catch (error) {
-      console.error('Failed to fetch quotes:', error);
-      const message = error instanceof Error ? error.message : 'Failed to fetch live prices';
-      setQuotesError(message);
-      toast({
-        title: 'Error',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoadingQuotes(false);
     }
   };
 
@@ -1041,77 +888,11 @@ export default function OpenPositions({ positions, rollChains, onUngroupPosition
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold mb-2">Open Positions</h1>
-          <p className="text-muted-foreground">
-            Currently active positions with credit/debit tracking and profitability analysis
-          </p>
-        </div>
-        
-        {openPositions.length > 0 && (
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={fetchLiveQuotes}
-                    disabled={isLoadingQuotes}
-                    data-testid="button-refresh-quotes"
-                  >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingQuotes ? 'animate-spin' : ''}`} />
-                    {isLoadingQuotes ? 'Loading...' : lastRefreshTime ? 'Refresh Prices' : 'Get Live Prices'}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Fetch live option prices from Yahoo Finance</p>
-                  {!isAuthenticated && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Sign in to refresh prices
-                    </p>
-                  )}
-                </TooltipContent>
-              </Tooltip>
-              {lastRefreshTime && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        clearAllPrices();
-                        setLiveQuotes({});
-                        setOptionData({});
-                        setQuotesError(null);
-                        setLastRefreshTime(null);
-                      }}
-                      data-testid="button-clear-prices"
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Clear Prices
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Clear cached live prices</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-            {lastRefreshTime && (
-              <span className="text-xs text-muted-foreground">
-                Updated {format(lastRefreshTime, 'h:mm a')}
-              </span>
-            )}
-            {quotesError && (
-              <div className="flex items-center gap-1 text-xs text-destructive">
-                <AlertCircle className="w-3 h-3" />
-                {quotesError}
-              </div>
-            )}
-          </div>
-        )}
+      <div>
+        <h1 className="text-2xl font-semibold mb-2">Open Positions</h1>
+        <p className="text-muted-foreground">
+          Currently active positions with credit/debit tracking and profitability analysis
+        </p>
       </div>
 
       <FilterBar
