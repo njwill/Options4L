@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Position, RollChain, StockHolding, Tag } from '@shared/schema';
 import { format } from 'date-fns';
-import { Link2, MessageSquare, Unlink, Activity, Redo2 } from 'lucide-react';
+import { Link2, MessageSquare, Unlink, Activity, Redo2, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { computePositionHash } from '@/lib/positionHash';
@@ -480,6 +480,33 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
     return calculateLivePositionPL(position as any, positionPrices as any);
   };
 
+  // Helper to get live P/L for an entire roll chain
+  // Since Open Positions page only has open positions, we use the chain's static netPL
+  // and adjust for the live P/L of any open positions we have data for
+  const getLiveRollChainPL = (chain: RollChain, currentPosition: Position): { total: number; hasLiveData: boolean } => {
+    // Start with the chain's static total
+    let total = chain.netPL;
+    let hasLiveData = false;
+    
+    // For each open position in this chain that we have, calculate the live delta
+    for (const segment of chain.segments) {
+      const pos = positions.find(p => p.id === segment.positionId);
+      
+      // Only adjust for open positions where we have live pricing
+      if (pos && pos.status === 'open') {
+        const livePL = getLivePositionPL(pos);
+        if (livePL !== null) {
+          // Adjust: remove static netPL, add live P/L
+          const delta = livePL - pos.netPL;
+          total += delta;
+          hasLiveData = true;
+        }
+      }
+    }
+    
+    return { total, hasLiveData };
+  };
+
   const columns: Column<PositionWithDisplay>[] = useMemo(() => [
     {
       key: 'symbol',
@@ -674,21 +701,27 @@ export default function OpenPositions({ positions, rollChains, stockHoldings = [
           return <span className="text-muted-foreground">-</span>;
         }
         
+        // Calculate live P/L for the entire chain
+        const { total: liveChainPL, hasLiveData } = getLiveRollChainPL(chain, row);
+        
         return (
           <div className="flex items-center gap-2" data-testid={`rollchain-${row.id}`}>
             <Badge variant="outline" className="gap-1">
               <Link2 className="w-3 h-3" />
               Rolled ({chain.rollCount})
             </Badge>
-            <span className={`tabular-nums font-medium ${chain.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(chain.netPL)}
+            <span className={`tabular-nums font-medium flex items-center gap-1 ${liveChainPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {hasLiveData && <Zap className="w-3 h-3 text-yellow-500" />}
+              {formatCurrency(liveChainPL)}
             </span>
           </div>
         );
       },
       sortValue: (row) => {
         const chain = getRollChainForPosition(row);
-        return chain ? chain.netPL : 0;
+        if (!chain) return 0;
+        const { total } = getLiveRollChainPL(chain, row);
+        return total;
       },
       className: 'text-right',
     },
