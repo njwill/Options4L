@@ -31,9 +31,12 @@ interface MonthlyData {
   totalPL: number;
   closedCount: number;
   openCount: number;
+  isCurrentMonth: boolean;
 }
 
 export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps) {
+  const currentMonth = format(new Date(), 'yyyy-MM');
+
   const chartData = useMemo(() => {
     if (positions.length === 0) return [];
 
@@ -55,6 +58,7 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
         totalPL: 0,
         closedCount: 0,
         openCount: 0,
+        isCurrentMonth: monthKey === currentMonth,
       };
 
       const pl = position.realizedPL ?? position.netPL;
@@ -65,7 +69,6 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
       monthlyMap.set(monthKey, existing);
     });
 
-    const currentMonth = format(new Date(), 'yyyy-MM');
     const currentMonthLabel = format(new Date(), 'MMM yyyy');
     
     if (openPositions.length > 0) {
@@ -81,6 +84,7 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
         totalPL: 0,
         closedCount: 0,
         openCount: 0,
+        isCurrentMonth: true,
       };
 
       existing.unrealizedPL = unrealizedPL;
@@ -100,7 +104,7 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
       }));
 
     return sortedData;
-  }, [positions, livePLData]);
+  }, [positions, livePLData, currentMonth]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -163,26 +167,39 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
                   <div className="bg-card border rounded-lg shadow-lg p-3 min-w-[180px]">
                     <p className="text-sm font-medium mb-2 border-b pb-2">{data.monthLabel}</p>
                     <div className="space-y-1.5">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-muted-foreground">Realized P/L</span>
-                        <span className={`text-sm font-medium tabular-nums ${data.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatCurrency(data.realizedPL)}
-                        </span>
-                      </div>
-                      {data.unrealizedPL !== 0 && (
+                      {data.isCurrentMonth ? (
+                        <>
+                          {data.realizedPL !== 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-muted-foreground">Realized P/L</span>
+                              <span className={`text-sm font-medium tabular-nums ${data.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {formatCurrency(data.realizedPL)}
+                              </span>
+                            </div>
+                          )}
+                          {data.unrealizedPL !== 0 && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-muted-foreground">Unrealized P/L</span>
+                              <span className={`text-sm font-medium tabular-nums ${data.unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {formatCurrency(data.unrealizedPL)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center pt-1.5 border-t">
+                            <span className="text-xs font-medium">Total</span>
+                            <span className={`text-sm font-semibold tabular-nums ${data.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatCurrency(data.totalPL)}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
                         <div className="flex justify-between items-center">
-                          <span className="text-xs text-muted-foreground">Unrealized P/L</span>
-                          <span className={`text-sm font-medium tabular-nums ${data.unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatCurrency(data.unrealizedPL)}
+                          <span className="text-xs font-medium">P/L</span>
+                          <span className={`text-sm font-semibold tabular-nums ${data.realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(data.realizedPL)}
                           </span>
                         </div>
                       )}
-                      <div className="flex justify-between items-center pt-1.5 border-t">
-                        <span className="text-xs font-medium">Total</span>
-                        <span className={`text-sm font-semibold tabular-nums ${data.totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatCurrency(data.totalPL)}
-                        </span>
-                      </div>
                       <div className="text-xs text-muted-foreground pt-1">
                         {data.closedCount > 0 && <span>{data.closedCount} closed</span>}
                         {data.closedCount > 0 && data.openCount > 0 && <span> · </span>}
@@ -210,8 +227,8 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
                 </div>
                 {hasUnrealized && (
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-sm border border-muted-foreground" style={{ backgroundColor: 'transparent', opacity: 0.6 }} />
-                    <span className="text-muted-foreground">Unrealized (stacked)</span>
+                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'hsl(142, 76%, 36%)', opacity: 0.6 }} />
+                    <span className="text-muted-foreground">Unrealized (current month)</span>
                   </div>
                 )}
               </div>
