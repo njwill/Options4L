@@ -68,38 +68,57 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
     }
   };
 
-  // Calculate live P/L for open chain using cached prices
-  const getLiveChainPL = (): { livePL: number | null; hasLiveData: boolean } => {
+  // Calculate chain P/L breakdown: realized (closed) + live (open)
+  const getChainPLBreakdown = (): { 
+    realizedPL: number; 
+    liveOpenPL: number | null; 
+    totalPL: number;
+    hasLiveData: boolean;
+  } => {
+    // Realized P/L from closed positions in the chain
+    const closedPositions = chainPositions.filter(p => p.status === 'closed');
+    const realizedPL = closedPositions.reduce((sum, p) => sum + p.netPL, 0);
+    
+    // For closed chains, total is just the static netPL
     if (chain.status !== 'open' || chainPositions.length === 0) {
-      return { livePL: null, hasLiveData: false };
+      return { 
+        realizedPL, 
+        liveOpenPL: null, 
+        totalPL: chain.netPL,
+        hasLiveData: false 
+      };
     }
 
+    // Calculate live P/L for open positions
     const openPositions = chainPositions.filter(p => p.status === 'open');
     let hasLiveData = false;
-    let totalLivePL = 0;
+    let liveOpenPL = 0;
+    let staticOpenPL = 0;
 
     for (const pos of openPositions) {
+      staticOpenPL += pos.netPL; // Static value from position
       const cachedPrices = getPositionPrices(pos.id);
       const livePL = calculateLivePositionPL(pos as any, cachedPrices as any);
       if (livePL !== null) {
         hasLiveData = true;
-        totalLivePL += livePL;
+        liveOpenPL += livePL;
+      } else {
+        liveOpenPL += pos.netPL; // Fall back to static if no live data
       }
     }
 
-    if (hasLiveData) {
-      // Add realized P/L from closed positions in the chain
-      const closedPL = chainPositions
-        .filter(p => p.status === 'closed')
-        .reduce((sum, p) => sum + p.netPL, 0);
-      return { livePL: totalLivePL + closedPL, hasLiveData: true };
-    }
+    // Total = realized from closed + live from open
+    const totalPL = realizedPL + liveOpenPL;
 
-    return { livePL: null, hasLiveData: false };
+    return { 
+      realizedPL, 
+      liveOpenPL: hasLiveData ? liveOpenPL : null, 
+      totalPL,
+      hasLiveData 
+    };
   };
 
-  const { livePL, hasLiveData } = getLiveChainPL();
-  const displayPL = livePL !== null ? livePL : chain.netPL;
+  const { realizedPL, liveOpenPL, totalPL, hasLiveData } = getChainPLBreakdown();
 
   return (
     <Card className="p-4" data-testid="roll-chain-timeline">
@@ -128,14 +147,14 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Live P/L based on current prices</p>
+                  <p>Includes live prices for open position</p>
                 </TooltipContent>
               </Tooltip>
             )}
             Chain Total P/L
           </p>
-          <p className={`font-bold tabular-nums ${displayPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {formatCurrency(displayPL)}
+          <p className={`font-bold tabular-nums ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(totalPL)}
           </p>
         </div>
       </button>
@@ -143,19 +162,68 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
       {/* Timeline */}
       {isExpanded && (
         <div className="mt-6 space-y-4">
-          {/* Summary Stats */}
-          <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-md">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Total Credits</p>
-              <p className="font-medium tabular-nums text-green-600">{formatCurrency(chain.totalCredits)}</p>
+          {/* P/L Breakdown - Clear explanation of chain value */}
+          <div className="p-4 bg-muted/30 rounded-md space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-xs text-muted-foreground mb-1 cursor-help underline decoration-dotted">
+                      Realized P/L (Closed)
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">P/L from positions that have been rolled or closed</p>
+                  </TooltipContent>
+                </Tooltip>
+                <p className={`font-semibold tabular-nums ${realizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(realizedPL)}
+                </p>
+              </div>
+              <div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="text-xs text-muted-foreground mb-1 cursor-help underline decoration-dotted flex items-center gap-1">
+                      {liveOpenPL !== null && <Zap className="h-3 w-3 text-yellow-500" />}
+                      Open Position P/L
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">
+                      {liveOpenPL !== null 
+                        ? 'Current unrealized P/L based on live prices' 
+                        : 'Unrealized P/L on current open position'}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+                <p className={`font-semibold tabular-nums ${(liveOpenPL ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(liveOpenPL ?? (chain.status === 'open' ? chainPositions.filter(p => p.status === 'open').reduce((sum, p) => sum + p.netPL, 0) : 0))}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Total Debits</p>
-              <p className="font-medium tabular-nums text-red-600">{formatCurrency(Math.abs(chain.totalDebits))}</p>
+            
+            <div className="border-t border-border/50 pt-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1 font-medium">Chain Total P/L</p>
+                <p className={`text-lg font-bold tabular-nums ${totalPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(totalPL)}
+                </p>
+              </div>
+              <Badge variant={chain.status === 'open' ? 'default' : 'secondary'} className="text-xs">
+                {chain.status === 'open' ? 'Open Chain' : 'Closed Chain'}
+              </Badge>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Status</p>
-              <Badge variant={chain.status === 'open' ? 'default' : 'secondary'}>{chain.status}</Badge>
+
+            {/* Credits/Debits detail */}
+            <div className="border-t border-border/50 pt-3 grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <p className="text-muted-foreground mb-0.5">Total Credits Collected</p>
+                <p className="font-medium tabular-nums text-green-600">{formatCurrency(chain.totalCredits)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground mb-0.5">Total Debits Paid</p>
+                <p className="font-medium tabular-nums text-red-600">{formatCurrency(Math.abs(chain.totalDebits))}</p>
+              </div>
             </div>
           </div>
 
