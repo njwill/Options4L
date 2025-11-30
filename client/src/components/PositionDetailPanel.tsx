@@ -1001,7 +1001,11 @@ export function PositionDetailPanel({
           {chain && (
             <div>
               <h3 className="text-lg font-semibold mb-4">Complete Roll Chain</h3>
-              <RollChainTimeline chain={chain} />
+              <RollChainTimeline 
+                chain={chain} 
+                positions={[position]}
+                getPositionPrices={getPositionPrices}
+              />
             </div>
           )}
 
