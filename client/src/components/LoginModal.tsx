@@ -228,7 +228,7 @@ export function LoginModal({ open, onOpenChange }: LoginModalProps) {
             Sign In
           </DialogTitle>
           <DialogDescription>
-            Sign in for custom position tagging and strategy notes.
+            Sign in to save your analysis history and access it from any device.
           </DialogDescription>
         </DialogHeader>
 
