@@ -141,6 +141,11 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                   segmentLivePL = calculateLivePositionPL(segmentPosition as any, cachedPrices as any);
                 }
 
+                // For non-first segments, get the roll date from the PREVIOUS segment
+                // (previous segment's rollDate = when it was rolled into THIS segment)
+                const prevSegment = index > 0 ? chain.segments[index - 1] : null;
+                const rolledIntoDate = prevSegment?.rollDate;
+
                 return (
                   <div key={segment.positionId} className="relative pl-10" data-testid={`segment-${index}`}>
                     {/* Timeline dot */}
@@ -199,9 +204,10 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                         </div>
                       </div>
 
-                      {!isFirst && segment.rollDate && (
+                      {/* Show roll details for non-initial positions */}
+                      {!isFirst && rolledIntoDate && (
                         <p className="text-xs text-muted-foreground">
-                          Rolled on {formatDate(segment.rollDate)}
+                          Rolled on {formatDate(rolledIntoDate)}
                           {segment.fromExpiration && segment.toExpiration && segment.fromExpiration !== segment.toExpiration && 
                             ` (${formatDate(segment.fromExpiration)} → ${formatDate(segment.toExpiration)})`}
                           {segment.fromStrike && segment.toStrike && segment.fromStrike !== segment.toStrike && 
