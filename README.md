@@ -37,8 +37,10 @@ Automatically identifies 20+ complex options strategies including:
 ### Position Management
 - FIFO-based lot tracking for accurate cost basis
 - **Manual position grouping** - organize related positions together
+- **Custom position tagging** - create color-coded tags to organize and filter positions
+- **Strategy reclassification** - manually override auto-detected strategies (e.g., mark a Short Call as Covered Call when you own the underlying shares)
 - Separate views for open and closed positions
-- Filterable by symbol, strategy type, and status
+- Filterable by symbol, strategy type, tags, and status
 - Premium per contract display for options
 
 ### Notes & Comments
@@ -135,7 +137,8 @@ npm run dev
 - Sign up free to save your data permanently
 - Add notes to transactions and positions
 - Access live market data and Greeks
-- Group related positions together
+- Create custom tags to organize positions
+- Reclassify strategies when auto-detection needs adjustment
 
 ## License
 
