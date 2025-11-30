@@ -46,6 +46,7 @@ interface PositionDetailPanelProps {
   position: Position | null;
   rollChains: RollChain[];
   stockHoldings?: StockHolding[];
+  allPositions?: Position[];
   isOpen: boolean;
   onClose: () => void;
   positionHash?: string;
@@ -56,7 +57,8 @@ interface PositionDetailPanelProps {
 export function PositionDetailPanel({ 
   position, 
   rollChains, 
-  stockHoldings = [], 
+  stockHoldings = [],
+  allPositions = [],
   isOpen, 
   onClose,
   positionHash,
@@ -1001,7 +1003,10 @@ export function PositionDetailPanel({
           {chain && (
             <div>
               <h3 className="text-lg font-semibold mb-4">Complete Roll Chain</h3>
-              <RollChainTimeline chain={chain} />
+              <RollChainTimeline 
+                chain={chain} 
+                chainPositions={allPositions.filter(p => p.rollChainId === chain.chainId)}
+              />
             </div>
           )}
 

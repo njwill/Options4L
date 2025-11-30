@@ -201,6 +201,7 @@ export default function Dashboard({ positions, transactions, rollChains, stockHo
         position={selectedPosition}
         rollChains={rollChains}
         stockHoldings={stockHoldings}
+        allPositions={positions}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
       />

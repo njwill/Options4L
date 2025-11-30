@@ -578,6 +578,7 @@ export default function ClosedPositions({ positions, rollChains, stockHoldings =
         position={selectedPosition}
         rollChains={rollChains}
         stockHoldings={stockHoldings}
+        allPositions={positions}
         isOpen={selectedPosition !== null}
         onClose={() => setSelectedPosition(null)}
         positionHash={selectedPosition ? positionHashes.get(selectedPosition.id) : undefined}

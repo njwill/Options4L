@@ -1,16 +1,20 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import type { RollChain } from '@shared/schema';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { RollChain, Position } from '@shared/schema';
 import { format } from 'date-fns';
+import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 
 interface RollChainTimelineProps {
   chain: RollChain;
+  chainPositions?: Position[];
 }
 
-export function RollChainTimeline({ chain }: RollChainTimelineProps) {
+export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimelineProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { getPositionPrices, cacheVersion } = usePriceCache();
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -28,6 +32,39 @@ export function RollChainTimeline({ chain }: RollChainTimelineProps) {
       return dateStr;
     }
   };
+
+  // Calculate live P/L for open chain using cached prices
+  const getLiveChainPL = (): { livePL: number | null; hasLiveData: boolean } => {
+    if (chain.status !== 'open' || chainPositions.length === 0) {
+      return { livePL: null, hasLiveData: false };
+    }
+
+    const openPositions = chainPositions.filter(p => p.status === 'open');
+    let hasLiveData = false;
+    let totalLivePL = 0;
+
+    for (const pos of openPositions) {
+      const cachedPrices = getPositionPrices(pos.id);
+      const livePL = calculateLivePositionPL(pos as any, cachedPrices as any);
+      if (livePL !== null) {
+        hasLiveData = true;
+        totalLivePL += livePL;
+      }
+    }
+
+    if (hasLiveData) {
+      // Add realized P/L from closed positions in the chain
+      const closedPL = chainPositions
+        .filter(p => p.status === 'closed')
+        .reduce((sum, p) => sum + p.netPL, 0);
+      return { livePL: totalLivePL + closedPL, hasLiveData: true };
+    }
+
+    return { livePL: null, hasLiveData: false };
+  };
+
+  const { livePL, hasLiveData } = getLiveChainPL();
+  const displayPL = livePL !== null ? livePL : chain.netPL;
 
   return (
     <Card className="p-4" data-testid="roll-chain-timeline">
@@ -47,9 +84,23 @@ export function RollChainTimeline({ chain }: RollChainTimelineProps) {
           </div>
         </div>
         <div className="text-right">
-          <p className="font-semibold text-sm text-muted-foreground mb-1">Chain Total P/L</p>
-          <p className={`font-bold tabular-nums ${chain.netPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {formatCurrency(chain.netPL)}
+          <p className="font-semibold text-sm text-muted-foreground mb-1 flex items-center justify-end gap-1">
+            {hasLiveData && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help">
+                    <Zap className="h-3 w-3 text-yellow-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Live P/L based on current prices</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            Chain Total P/L
+          </p>
+          <p className={`font-bold tabular-nums ${displayPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {formatCurrency(displayPL)}
           </p>
         </div>
       </button>
@@ -80,6 +131,15 @@ export function RollChainTimeline({ chain }: RollChainTimelineProps) {
               {chain.segments.map((segment, index) => {
                 const isFirst = index === 0;
                 const isLast = index === chain.segments.length - 1;
+                const segmentPosition = chainPositions.find(p => p.id === segment.positionId);
+                const isOpenSegment = segmentPosition?.status === 'open';
+                
+                // Calculate live P/L for this segment if it's open
+                let segmentLivePL: number | null = null;
+                if (isOpenSegment && segmentPosition) {
+                  const cachedPrices = getPositionPrices(segmentPosition.id);
+                  segmentLivePL = calculateLivePositionPL(segmentPosition as any, cachedPrices as any);
+                }
 
                 return (
                   <div key={segment.positionId} className="relative pl-10" data-testid={`segment-${index}`}>
@@ -87,17 +147,34 @@ export function RollChainTimeline({ chain }: RollChainTimelineProps) {
                     <div className={`absolute left-2.5 top-2 w-3 h-3 rounded-full border-2 ${isLast ? 'bg-primary border-primary' : 'bg-background border-border'}`} />
 
                     {/* Segment card */}
-                    <div className="bg-card border rounded-md p-3">
+                    <div className={`bg-card border rounded-md p-3 ${isOpenSegment ? 'border-primary/30' : ''}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <Badge variant="outline" className="text-xs mb-1">
-                            {isFirst ? 'Initial Position' : isLast ? 'Current Position' : `Roll #${index}`}
-                          </Badge>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-xs">
+                              {isFirst ? 'Initial Position' : isLast ? 'Current Position' : `Roll #${index}`}
+                            </Badge>
+                            {isOpenSegment && (
+                              <Badge variant="default" className="text-xs">Open</Badge>
+                            )}
+                          </div>
                           <p className="text-sm font-medium">
                             {segment.toExpiration && `Exp ${formatDate(segment.toExpiration)}`}
                             {segment.toStrike && ` • $${segment.toStrike}`}
                           </p>
                         </div>
+                        {/* Show live P/L for open segment */}
+                        {segmentLivePL !== null && (
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Zap className="h-3 w-3 text-yellow-500" />
+                              Live P/L
+                            </p>
+                            <p className={`font-semibold tabular-nums ${segmentLivePL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatCurrency(segmentLivePL)}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Credit/Debit breakdown */}
