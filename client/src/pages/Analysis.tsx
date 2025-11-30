@@ -55,6 +55,7 @@ interface RollChainWithDetails extends RollChain {
   daysExtended: number;
   currentLivePL?: number | null;
   nearestExpiration?: string | null;
+  realizedPL?: number; // P/L from closed segments within open chains
 }
 
 export default function Analysis({ positions, rollChains, stockHoldings = [] }: AnalysisProps) {
@@ -293,12 +294,19 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         }
       }
       
+      // Calculate realized P/L from closed segments (useful for open chains)
+      // Defensive: ensure netPL is a valid number, default to 0 if not
+      const realizedPL = chainPositions
+        .filter(p => p.status === 'closed')
+        .reduce((sum, p) => sum + (typeof p.netPL === 'number' && !isNaN(p.netPL) ? p.netPL : 0), 0);
+      
       return {
         ...chain,
         positions: chainPositions,
         daysExtended,
         currentLivePL,
         nearestExpiration,
+        realizedPL,
       };
     });
   }, [rollChains, positions, getPositionPrices, cacheVersion]);
@@ -554,6 +562,11 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         case 'debits':
           aVal = a.totalDebits;
           bVal = b.totalDebits;
+          break;
+        case 'realizedPL':
+          // Defensive: handle NaN and undefined values
+          aVal = typeof a.realizedPL === 'number' && !isNaN(a.realizedPL) ? a.realizedPL : 0;
+          bVal = typeof b.realizedPL === 'number' && !isNaN(b.realizedPL) ? b.realizedPL : 0;
           break;
         case 'netPL':
           aVal = a.currentLivePL ?? a.netPL;
@@ -934,6 +947,23 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                             </button>
                           </TableHead>
                           <TableHead className="text-right">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  onClick={() => handleSort('realizedPL')}
+                                  className="flex items-center gap-2 hover-elevate active-elevate-2 px-2 py-1 -mx-2 -my-1 rounded ml-auto"
+                                  data-testid="button-sort-realized-pl"
+                                >
+                                  Realized
+                                  <SortIcon column="realizedPL" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">P/L from closed segments (for open chains with prior rolls)</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableHead>
+                          <TableHead className="text-right">
                             <button
                               onClick={() => handleSort('netPL')}
                               className="flex items-center gap-2 hover-elevate active-elevate-2 px-2 py-1 -mx-2 -my-1 rounded ml-auto"
@@ -1037,6 +1067,35 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                                   <span className="tabular-nums text-red-600">{formatCurrency(-chain.totalDebits)}</span>
                                 </TableCell>
                                 <TableCell className="py-2 text-right">
+                                  {/* Show realized P/L for open chains with closed segments */}
+                                  {(() => {
+                                    const hasClosedSegments = chain.positions.some(p => p.status === 'closed');
+                                    // Ensure we always have a valid number for formatCurrency
+                                    const safeRealizedPL = typeof chain.realizedPL === 'number' && !isNaN(chain.realizedPL) ? chain.realizedPL : 0;
+                                    const safeNetPL = typeof chain.netPL === 'number' && !isNaN(chain.netPL) ? chain.netPL : 0;
+                                    
+                                    if (chain.status === 'open') {
+                                      // For open chains, show realized P/L from closed segments (even if $0)
+                                      if (hasClosedSegments) {
+                                        return (
+                                          <span className={`tabular-nums ${safeRealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {formatCurrency(safeRealizedPL)}
+                                          </span>
+                                        );
+                                      } else {
+                                        return <span className="text-muted-foreground">-</span>;
+                                      }
+                                    } else {
+                                      // For closed chains, show total realized P/L (netPL)
+                                      return (
+                                        <span className={`tabular-nums ${safeNetPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                          {formatCurrency(safeNetPL)}
+                                        </span>
+                                      );
+                                    }
+                                  })()}
+                                </TableCell>
+                                <TableCell className="py-2 text-right">
                                   <div className="flex items-center justify-end gap-1">
                                     {isLive && (
                                       <Tooltip>
@@ -1065,7 +1124,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                               {/* Expanded row with roll history */}
                               {isExpanded && (
                                 <TableRow key={`${chain.chainId}-segments`} className="hover:bg-transparent">
-                                  <TableCell colSpan={10} className="p-0">
+                                  <TableCell colSpan={11} className="p-0">
                                     <div className="bg-muted/30 p-4 border-t">
                                       <h4 className="text-sm font-medium mb-3">Roll History</h4>
                                       <div className="space-y-2">
@@ -1073,7 +1132,30 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                                           const position = chain.positions.find(p => p.id === segment.positionId);
                                           const isFirst = idx === 0;
                                           const isOpenPosition = position?.status === 'open';
+                                          const isClosed = position?.status === 'closed';
                                           const liveData = isOpenPosition && position ? getPositionLiveData(position) : null;
+                                          
+                                          // Calculate opening/closing amounts for closed segments with defensive checks
+                                          // Skip legs without proper transCode or amount to prevent NaN
+                                          const openingAmount = position?.legs
+                                            ?.filter(leg => 
+                                              leg && 
+                                              typeof leg.transCode === 'string' &&
+                                              (leg.transCode === 'STO' || leg.transCode === 'BTO') && 
+                                              typeof leg.amount === 'number' && 
+                                              !isNaN(leg.amount)
+                                            )
+                                            .reduce((sum, leg) => sum + leg.amount, 0) ?? 0;
+                                          const closingAmount = position?.legs
+                                            ?.filter(leg => 
+                                              leg && 
+                                              typeof leg.transCode === 'string' &&
+                                              (leg.transCode === 'STC' || leg.transCode === 'BTC') && 
+                                              typeof leg.amount === 'number' && 
+                                              !isNaN(leg.amount)
+                                            )
+                                            .reduce((sum, leg) => sum + leg.amount, 0) ?? 0;
+                                          const positionNet = openingAmount + closingAmount;
                                           
                                           return (
                                             <div 
@@ -1114,12 +1196,68 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                                                   </div>
                                                 </div>
                                               
-                                                {position && (
-                                                  <Badge variant={position.status === 'open' ? 'default' : 'secondary'} className="text-xs">
-                                                    {position.status}
-                                                  </Badge>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                  {/* Show realized P/L for closed segments */}
+                                                  {isClosed && (
+                                                    <div className="text-right">
+                                                      <span className="text-xs text-muted-foreground mr-1">Realized:</span>
+                                                      <span className={`text-sm font-semibold tabular-nums ${positionNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {formatCurrency(positionNet)}
+                                                      </span>
+                                                    </div>
+                                                  )}
+                                                  {position && (
+                                                    <Badge variant={position.status === 'open' ? 'default' : 'secondary'} className="text-xs">
+                                                      {position.status}
+                                                    </Badge>
+                                                  )}
+                                                </div>
                                               </div>
+                                              
+                                              {/* Opening/Closing breakdown for closed positions */}
+                                              {isClosed && (
+                                                <div className="grid grid-cols-3 gap-3 mt-3 text-xs bg-muted/30 rounded-md p-2">
+                                                  <div>
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <p className="text-muted-foreground mb-0.5 cursor-help underline decoration-dotted">Opened</p>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent>
+                                                        <p className="text-xs">Amount received/paid when opening this position</p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                    <p className={`font-semibold tabular-nums ${openingAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                      {openingAmount >= 0 ? '+' : ''}{formatCurrency(openingAmount)}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <p className="text-muted-foreground mb-0.5 cursor-help underline decoration-dotted">Closed</p>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent>
+                                                        <p className="text-xs">Amount received/paid when closing (rolling) this position</p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                    <p className={`font-semibold tabular-nums ${closingAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                      {closingAmount >= 0 ? '+' : ''}{formatCurrency(closingAmount)}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                        <p className="text-muted-foreground mb-0.5 cursor-help underline decoration-dotted font-medium">Position Net</p>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent>
+                                                        <p className="text-xs">Realized profit/loss from this segment</p>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                    <p className={`font-semibold tabular-nums ${positionNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                      {positionNet >= 0 ? '+' : ''}{formatCurrency(positionNet)}
+                                                    </p>
+                                                  </div>
+                                                </div>
+                                              )}
                                               
                                               {/* Live Data Section for Open Positions */}
                                               {isOpenPosition && liveData && liveData.hasData && (
