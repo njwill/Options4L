@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { queryClient, apiRequest } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -74,6 +74,8 @@ function AppContent() {
   const isLoggedInRef = useRef(false);
   // Ref to track previous user for detecting logout transitions
   const prevUserRef = useRef<typeof user>(null);
+  // Ref to track if we've auto-fetched prices after login
+  const hasAutoFetchedPricesRef = useRef(false);
   
   // Keep refs in sync with user state
   useEffect(() => {
@@ -318,6 +320,94 @@ function AppContent() {
     prevUserRef.current = user;
   }, [user, rawTransactions.length, hadAnonymousDataBeforeLogin, hasLoadedUserData, isLoadingUserData, loadAttempts]);
 
+  // Auto-fetch live prices after login when user has open positions
+  useEffect(() => {
+    // Reset auto-fetch flag when user logs out
+    if (!user) {
+      hasAutoFetchedPricesRef.current = false;
+      return;
+    }
+    
+    // Only auto-fetch once per login session
+    if (hasAutoFetchedPricesRef.current) return;
+    
+    // Wait until user data is loaded
+    if (!hasLoadedUserData || isLoadingUserData) return;
+    
+    // Need open positions to fetch prices for
+    const currentOpenPositions = positions.filter(p => p.status === 'open');
+    if (currentOpenPositions.length === 0) return;
+    
+    // Don't re-fetch if we already have cached prices
+    if (hasCachedPrices()) return;
+    
+    // Mark as auto-fetched and trigger the fetch
+    hasAutoFetchedPricesRef.current = true;
+    
+    // Small delay to ensure UI is ready
+    const timer = setTimeout(async () => {
+      // Clear any previous errors before fetching
+      setQuotesError(null);
+      
+      // Call the API directly here to avoid dependency issues
+      try {
+        // Build leg requests from current positions
+        const legs: { symbol: string; strike: number; expiration: string; type: 'call' | 'put'; legId: string }[] = [];
+        for (const pos of currentOpenPositions) {
+          if (pos.legs && Array.isArray(pos.legs)) {
+            for (let i = 0; i < pos.legs.length; i++) {
+              const leg = pos.legs[i];
+              if (leg && leg.strike && leg.expiration && leg.optionType) {
+                legs.push({
+                  symbol: pos.symbol,
+                  strike: leg.strike,
+                  expiration: leg.expiration,
+                  type: leg.optionType.toLowerCase() as 'call' | 'put',
+                  legId: `${pos.id}-leg-${i}`,
+                });
+              }
+            }
+          }
+        }
+        
+        if (legs.length > 0) {
+          setIsLoadingQuotes(true);
+          const chainResponse = await apiRequest('POST', '/api/options/chain', { legs });
+          const chainData = await chainResponse.json();
+          
+          if (chainData.success && chainData.optionData) {
+            const pricesByPosition: Record<string, Record<string, any>> = {};
+            Object.entries(chainData.optionData).forEach(([legId, legData]) => {
+              const positionId = legId.split('-leg-')[0];
+              if (!pricesByPosition[positionId]) {
+                pricesByPosition[positionId] = {};
+              }
+              pricesByPosition[positionId][legId] = legData;
+            });
+            
+            Object.entries(pricesByPosition).forEach(([positionId, prices]) => {
+              setPositionPrices(positionId, prices as any);
+            });
+            
+            setLastRefreshTime(new Date());
+            
+            toast({
+              title: 'Prices Updated',
+              description: `Live prices fetched for ${currentOpenPositions.length} position${currentOpenPositions.length === 1 ? '' : 's'}.`,
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Auto-fetch prices error:', error);
+        setQuotesError(error instanceof Error ? error.message : 'Failed to fetch prices');
+      } finally {
+        setIsLoadingQuotes(false);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [user, hasLoadedUserData, isLoadingUserData, positions, hasCachedPrices, setPositionPrices, setLastRefreshTime, toast]);
+
   const handleFileUpload = async (file: File) => {
     // Capture auth state at invocation to detect logout during upload
     const startedLoggedIn = !!user;
@@ -421,11 +511,11 @@ function AppContent() {
     await refreshData();
   };
 
-  // Get open positions for live price fetching
-  const openPositions = positions.filter(p => p.status === 'open');
+  // Get open positions for live price fetching (memoized for stable reference)
+  const openPositions = useMemo(() => positions.filter(p => p.status === 'open'), [positions]);
 
   // Build leg requests for options chain API (from all open positions)
-  const buildLegRequests = () => {
+  const buildLegRequests = useCallback(() => {
     const legs: { symbol: string; strike: number; expiration: string; type: 'call' | 'put'; legId: string }[] = [];
     
     for (const pos of openPositions) {
@@ -446,10 +536,10 @@ function AppContent() {
     }
     
     return legs;
-  };
+  }, [openPositions]);
 
-  // Fetch live quotes for all open positions
-  const fetchLiveQuotes = async () => {
+  // Fetch live quotes for all open positions (memoized for stable reference)
+  const fetchLiveQuotes = useCallback(async () => {
     if (!user) {
       toast({
         title: 'Sign in required',
@@ -516,7 +606,7 @@ function AppContent() {
     } finally {
       setIsLoadingQuotes(false);
     }
-  };
+  }, [user, openPositions, buildLegRequests, setPositionPrices, setLastRefreshTime, toast]);
 
   // Clear all live prices
   const handleClearPrices = () => {
