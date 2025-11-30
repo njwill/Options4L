@@ -668,9 +668,10 @@ function AppContent() {
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Fetch live option prices from Yahoo Finance</p>
-                          {!user && (
-                            <p className="text-xs text-muted-foreground mt-1">Sign in to fetch prices</p>
+                          {user ? (
+                            <p>Fetch live option prices from Yahoo Finance</p>
+                          ) : (
+                            <p>Sign In to get live prices!</p>
                           )}
                         </TooltipContent>
                       </Tooltip>
