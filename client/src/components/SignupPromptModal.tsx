@@ -5,7 +5,7 @@ import {
   MessageSquare, 
   TrendingUp, 
   Layers, 
-  History, 
+  Tag, 
   Shield,
   Sparkles,
   Gift
@@ -22,7 +22,7 @@ const benefits = [
   { icon: MessageSquare, title: 'Add notes' },
   { icon: TrendingUp, title: 'Live pricing & Greeks' },
   { icon: Layers, title: 'Group positions' },
-  { icon: History, title: 'Upload history' },
+  { icon: Tag, title: 'Custom position tagging' },
   { icon: Shield, title: 'Smart deduplication' }
 ];
 
