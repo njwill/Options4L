@@ -54,6 +54,7 @@ interface RollChainWithDetails extends RollChain {
   positions: Position[];
   daysExtended: number;
   currentLivePL?: number | null;
+  nearestExpiration?: string | null;
 }
 
 export default function Analysis({ positions, rollChains, stockHoldings = [] }: AnalysisProps) {
@@ -266,11 +267,38 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         }
       }
       
+      // Calculate nearest expiration from the current/latest position's legs or last segment
+      let nearestExpiration: string | null = null;
+      
+      // First try to get from open position legs (most accurate)
+      const openPos = chainPositions.find(p => p.status === 'open');
+      if (openPos && openPos.legs && Array.isArray(openPos.legs)) {
+        const expirations = openPos.legs
+          .map((leg: any) => leg.expiration)
+          .filter((exp: string) => exp)
+          .map((exp: string) => new Date(exp))
+          .filter((d: Date) => !isNaN(d.getTime()))
+          .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+        
+        if (expirations.length > 0) {
+          nearestExpiration = expirations[0].toISOString().split('T')[0];
+        }
+      }
+      
+      // Fallback to last segment's toExpiration
+      if (!nearestExpiration && chain.segments && chain.segments.length > 0) {
+        const lastSegment = chain.segments[chain.segments.length - 1];
+        if (lastSegment.toExpiration) {
+          nearestExpiration = lastSegment.toExpiration;
+        }
+      }
+      
       return {
         ...chain,
         positions: chainPositions,
         daysExtended,
         currentLivePL,
+        nearestExpiration,
       };
     });
   }, [rollChains, positions, getPositionPrices, cacheVersion]);
@@ -296,6 +324,8 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         closedChains: 0,
         avgPLPerChain: 0,
         totalNetPL: 0,
+        totalLiveNetPL: 0,
+        hasLiveData: false,
         avgDaysExtended: 0,
         avgRollsPerChain: 0,
         successRate: 0,
@@ -314,6 +344,16 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
     const totalCredits = filteredRollChains.reduce((sum, c) => sum + c.totalCredits, 0);
     const totalDebits = filteredRollChains.reduce((sum, c) => sum + c.totalDebits, 0);
     const totalDays = filteredRollChains.reduce((sum, c) => sum + c.daysExtended, 0);
+    
+    // Calculate live-adjusted total P/L (uses currentLivePL for open chains when available)
+    let hasLiveData = false;
+    const totalLiveNetPL = filteredRollChains.reduce((sum, c) => {
+      if (c.currentLivePL !== null && c.currentLivePL !== undefined) {
+        hasLiveData = true;
+        return sum + c.currentLivePL;
+      }
+      return sum + c.netPL;
+    }, 0);
 
     return {
       totalRolls,
@@ -324,6 +364,8 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
       closedChains: closedChains.length,
       avgPLPerChain: filteredRollChains.length > 0 ? totalNetPL / filteredRollChains.length : 0,
       totalNetPL,
+      totalLiveNetPL,
+      hasLiveData,
       avgDaysExtended: filteredRollChains.length > 0 ? totalDays / filteredRollChains.length : 0,
       avgRollsPerChain: filteredRollChains.length > 0 ? totalRolls / filteredRollChains.length : 0,
       successRate: closedChains.length > 0 ? (profitableChains.length / closedChains.length) * 100 : 0,
@@ -465,9 +507,9 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
     });
   };
 
-  // Sorting state
-  const [sortColumn, setSortColumn] = useState<string>('entryDate');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  // Sorting state - default to status+expiration compound sort (open chains with nearest expiration first)
+  const [sortColumn, setSortColumn] = useState<string>('statusExpiration');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -497,6 +539,10 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
           aVal = new Date(a.firstEntryDate).getTime();
           bVal = new Date(b.firstEntryDate).getTime();
           break;
+        case 'expiration':
+          aVal = a.nearestExpiration ? new Date(a.nearestExpiration).getTime() : Infinity;
+          bVal = b.nearestExpiration ? new Date(b.nearestExpiration).getTime() : Infinity;
+          break;
         case 'daysHeld':
           aVal = a.daysExtended;
           bVal = b.daysExtended;
@@ -517,6 +563,36 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
           aVal = a.status;
           bVal = b.status;
           break;
+        case 'statusExpiration':
+          // Compound sort: open chains first, then by nearest expiration
+          // Status priority: open = 0, closed = 1
+          const aStatusPriority = a.status === 'open' ? 0 : 1;
+          const bStatusPriority = b.status === 'open' ? 0 : 1;
+          
+          if (aStatusPriority !== bStatusPriority) {
+            const statusComparison = aStatusPriority - bStatusPriority;
+            return sortDirection === 'asc' ? statusComparison : -statusComparison;
+          }
+          
+          // Same status, sort by expiration (nearest first = ascending)
+          // Chains with null expiration come after chains with valid expiration within same status group
+          const aHasExp = !!a.nearestExpiration;
+          const bHasExp = !!b.nearestExpiration;
+          
+          if (aHasExp !== bHasExp) {
+            // Chains with expiration come first within their status group
+            return aHasExp ? -1 : 1;
+          }
+          
+          if (!aHasExp && !bHasExp) {
+            // Both have no expiration, keep original order
+            return 0;
+          }
+          
+          const aExp = new Date(a.nearestExpiration!).getTime();
+          const bExp = new Date(b.nearestExpiration!).getTime();
+          const expComparison = aExp - bExp;
+          return sortDirection === 'asc' ? expComparison : -expComparison;
         default:
           return 0;
       }
@@ -632,15 +708,29 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Net P/L</CardTitle>
+                <CardTitle className="text-sm font-medium flex items-center gap-1">
+                  Total Net P/L
+                  {rollStats.hasLiveData && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help">
+                          <Zap className="h-3 w-3 text-yellow-500" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Includes live prices for open positions</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div 
-                  className={`text-2xl font-bold tabular-nums ${rollStats.totalNetPL >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                  className={`text-2xl font-bold tabular-nums ${rollStats.totalLiveNetPL >= 0 ? 'text-green-600' : 'text-red-600'}`}
                   data-testid="text-total-net-pl"
                 >
-                  {formatCurrency(rollStats.totalNetPL)}
+                  {formatCurrency(rollStats.totalLiveNetPL)}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {formatCurrency(rollStats.avgPLPerChain)} avg per chain
@@ -667,7 +757,21 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
           {/* Credits vs Debits Overview */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Premium Flow</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                Premium Flow
+                {rollStats.hasLiveData && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help">
+                        <Zap className="h-4 w-4 text-yellow-500" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Net Result includes live prices for open positions</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </CardTitle>
               <CardDescription>Total credits collected vs debits paid across all roll chains</CardDescription>
             </CardHeader>
             <CardContent>
@@ -685,9 +789,14 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-muted-foreground mb-1">Net Result</div>
-                  <div className={`text-xl font-bold tabular-nums ${rollStats.totalNetPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(rollStats.totalNetPL)}
+                  <div className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
+                    Net Result
+                    {rollStats.hasLiveData && (
+                      <Zap className="h-3 w-3 text-yellow-500" />
+                    )}
+                  </div>
+                  <div className={`text-xl font-bold tabular-nums ${rollStats.totalLiveNetPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(rollStats.totalLiveNetPL)}
                   </div>
                 </div>
               </div>
@@ -782,6 +891,16 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                             >
                               Entry Date
                               <SortIcon column="entryDate" />
+                            </button>
+                          </TableHead>
+                          <TableHead>
+                            <button
+                              onClick={() => handleSort('expiration')}
+                              className="flex items-center gap-2 hover-elevate active-elevate-2 px-2 py-1 -mx-2 -my-1 rounded"
+                              data-testid="button-sort-expiration"
+                            >
+                              Expiration
+                              <SortIcon column="expiration" />
                             </button>
                           </TableHead>
                           <TableHead className="text-right">
@@ -881,6 +1000,33 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                                 <TableCell className="py-2">
                                   <span className="tabular-nums">{formatDate(chain.firstEntryDate)}</span>
                                 </TableCell>
+                                <TableCell className="py-2">
+                                  {chain.nearestExpiration ? (
+                                    (() => {
+                                      const expDate = new Date(chain.nearestExpiration);
+                                      const today = new Date();
+                                      today.setHours(0, 0, 0, 0);
+                                      const daysToExp = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                      const isNearTerm = daysToExp <= 7 && daysToExp >= 0;
+                                      const isExpired = daysToExp < 0;
+                                      
+                                      return (
+                                        <div className="flex items-center gap-1">
+                                          <span className={`tabular-nums ${isExpired ? 'text-muted-foreground' : isNearTerm ? 'text-orange-500 font-medium' : ''}`}>
+                                            {formatDate(chain.nearestExpiration)}
+                                          </span>
+                                          {chain.status === 'open' && !isExpired && (
+                                            <span className={`text-xs ${isNearTerm ? 'text-orange-500' : 'text-muted-foreground'}`}>
+                                              ({daysToExp}d)
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })()
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
                                 <TableCell className="py-2 text-right">
                                   <span className="tabular-nums text-muted-foreground">{chain.daysExtended}</span>
                                 </TableCell>
@@ -919,7 +1065,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                               {/* Expanded row with roll history */}
                               {isExpanded && (
                                 <TableRow key={`${chain.chainId}-segments`} className="hover:bg-transparent">
-                                  <TableCell colSpan={9} className="p-0">
+                                  <TableCell colSpan={10} className="p-0">
                                     <div className="bg-muted/30 p-4 border-t">
                                       <h4 className="text-sm font-medium mb-3">Roll History</h4>
                                       <div className="space-y-2">
