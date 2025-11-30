@@ -65,7 +65,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
   const [tagSymbolFilter, setTagSymbolFilter] = useState<string>('all');
   const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
   
-  const { getAllCachedPrices, getPositionPrices, hasCachedPrices, lastRefreshTime } = usePriceCache();
+  const { getPositionPrices, hasCachedPrices, lastRefreshTime, cacheVersion } = usePriceCache();
   const { user } = useAuth();
   const isAuthenticated = !!user;
 
@@ -229,8 +229,6 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
 
   // Enrich roll chains with position data and live prices
   const enrichedRollChains = useMemo((): RollChainWithDetails[] => {
-    const allPrices = hasCachedPrices() ? getAllCachedPrices() : {};
-    
     return rollChains.map(chain => {
       // Find all positions in this chain
       const chainPositions = positions.filter(p => p.rollChainId === chain.chainId);
@@ -242,7 +240,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         ? 0 
         : differenceInDays(lastDate, firstDate);
       
-      // Calculate live P/L for open positions in chain
+      // Calculate live P/L for open positions in chain using getPositionPrices
       let currentLivePL: number | null = null;
       if (chain.status === 'open') {
         const openPositions = chainPositions.filter(p => p.status === 'open');
@@ -250,8 +248,9 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         let totalLivePL = 0;
         
         for (const pos of openPositions) {
-          const cachedPrices = allPrices[pos.id];
-          const livePL = calculateLivePositionPL(pos, cachedPrices);
+          // Use getPositionPrices for consistent cache access pattern
+          const cachedPrices = getPositionPrices(pos.id);
+          const livePL = calculateLivePositionPL(pos as any, cachedPrices as any);
           if (livePL !== null) {
             hasLiveData = true;
             totalLivePL += livePL;
@@ -274,7 +273,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         currentLivePL,
       };
     });
-  }, [rollChains, positions, getAllCachedPrices, hasCachedPrices]);
+  }, [rollChains, positions, getPositionPrices, cacheVersion]);
 
   // Filter roll chains
   const filteredRollChains = useMemo(() => {
@@ -352,8 +351,6 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
   const tagAnalytics = useMemo((): TagStats[] => {
     if (!isAuthenticated || availableTags.length === 0) return [];
     
-    const allPrices = hasCachedPrices() ? getAllCachedPrices() : {};
-    
     // Get tags to analyze (selected or all if none selected)
     const tagsToAnalyze = selectedTagIds.length > 0
       ? availableTags.filter(t => selectedTagIds.includes(t.id))
@@ -378,8 +375,9 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
       // Unrealized P/L from open positions (with live prices if available)
       let unrealizedPL = 0;
       for (const pos of openPositions) {
-        const cachedPrices = allPrices[pos.id];
-        const livePL = calculateLivePositionPL(pos, cachedPrices);
+        // Use getPositionPrices for consistent cache access pattern
+        const cachedPrices = getPositionPrices(pos.id);
+        const livePL = calculateLivePositionPL(pos as any, cachedPrices as any);
         unrealizedPL += livePL ?? pos.netPL;
       }
       
@@ -416,7 +414,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         strategyBreakdown,
       };
     });
-  }, [isAuthenticated, availableTags, selectedTagIds, tagSymbolFilter, positions, positionTagsData, getAllCachedPrices, hasCachedPrices]);
+  }, [isAuthenticated, availableTags, selectedTagIds, tagSymbolFilter, positions, positionTagsData, getPositionPrices, cacheVersion]);
 
   // Aggregate stats when multiple tags are selected
   const aggregateTagStats = useMemo(() => {
