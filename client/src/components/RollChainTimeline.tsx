@@ -314,19 +314,32 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                 // Show message when no leg data available for open segments
                 const hasLiveCacheForPosition = cachedPrices && Object.keys(cachedPrices).length > 0;
 
+                // Calculate opening/closing amounts from position legs
+                const openingAmount = segmentPosition?.legs
+                  ?.filter(leg => leg.transCode === 'STO' || leg.transCode === 'BTO')
+                  .reduce((sum, leg) => sum + leg.amount, 0) ?? 0;
+                const closingAmount = segmentPosition?.legs
+                  ?.filter(leg => leg.transCode === 'STC' || leg.transCode === 'BTC')
+                  .reduce((sum, leg) => sum + leg.amount, 0) ?? 0;
+                const positionNet = openingAmount + closingAmount;
+                const isClosed = segmentPosition?.status === 'closed';
+
                 return (
                   <div key={segment.positionId} className="relative pl-10" data-testid={`segment-${index}`}>
                     {/* Timeline dot */}
-                    <div className={`absolute left-2.5 top-2 w-3 h-3 rounded-full border-2 ${isLast ? 'bg-primary border-primary' : 'bg-background border-border'}`} />
+                    <div className={`absolute left-2.5 top-2 w-3 h-3 rounded-full border-2 ${isOpenSegment ? 'bg-primary border-primary' : 'bg-muted-foreground/50 border-muted-foreground/50'}`} />
 
                     {/* Segment card */}
-                    <div className={`bg-card border rounded-md p-3 ${isOpenSegment ? 'border-primary/30' : ''}`}>
+                    <div className={`bg-card border rounded-md p-3 ${isOpenSegment ? 'border-primary/30' : 'opacity-80'}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="outline" className="text-xs">
-                              {isFirst ? 'Initial Position' : isLast ? 'Current Position' : `Roll #${index}`}
+                            <Badge variant={isOpenSegment ? 'default' : 'secondary'} className="text-xs">
+                              {isFirst ? 'Initial Position' : isLast && isOpenSegment ? 'Current Position' : `Roll #${index}`}
                             </Badge>
+                            {isClosed && (
+                              <Badge variant="outline" className="text-xs text-muted-foreground">Closed</Badge>
+                            )}
                             {isOpenSegment && (
                               <Badge variant="default" className="text-xs">Open</Badge>
                             )}
@@ -348,29 +361,85 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                             </p>
                           </div>
                         )}
+                        {/* Show realized P/L for closed segment */}
+                        {isClosed && segmentLivePL === null && (
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Realized P/L</p>
+                            <p className={`font-semibold tabular-nums ${positionNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {formatCurrency(positionNet)}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Credit/Debit breakdown */}
-                      <div className="grid grid-cols-3 gap-3 mt-3 mb-2 text-xs">
-                        <div>
-                          <p className="text-muted-foreground mb-0.5">Credit</p>
-                          <p className="font-semibold tabular-nums text-green-600" data-testid={`segment-${index}-credit`}>
-                            {formatCurrency(segment.credit ?? 0)}
-                          </p>
+                      {/* Opening/Closing breakdown for closed positions */}
+                      {isClosed && (
+                        <div className="grid grid-cols-3 gap-3 mt-3 mb-2 text-xs bg-muted/30 rounded-md p-2">
+                          <div>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <p className="text-muted-foreground mb-0.5 cursor-help underline decoration-dotted">Opened</p>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">Amount received/paid when opening this position</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <p className={`font-semibold tabular-nums ${openingAmount >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid={`segment-${index}-opened`}>
+                              {openingAmount >= 0 ? '+' : ''}{formatCurrency(openingAmount)}
+                            </p>
+                          </div>
+                          <div>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <p className="text-muted-foreground mb-0.5 cursor-help underline decoration-dotted">Closed</p>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">Amount received/paid when closing (rolling) this position</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <p className={`font-semibold tabular-nums ${closingAmount >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid={`segment-${index}-closed`}>
+                              {closingAmount >= 0 ? '+' : ''}{formatCurrency(closingAmount)}
+                            </p>
+                          </div>
+                          <div>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <p className="text-muted-foreground mb-0.5 cursor-help underline decoration-dotted font-medium">Position Net</p>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">Realized profit/loss from this segment</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <p className={`font-semibold tabular-nums ${positionNet >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid={`segment-${index}-net`}>
+                              {positionNet >= 0 ? '+' : ''}{formatCurrency(positionNet)}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground mb-0.5">Debit</p>
-                          <p className="font-semibold tabular-nums text-red-600" data-testid={`segment-${index}-debit`}>
-                            {formatCurrency(segment.debit ?? 0)}
-                          </p>
+                      )}
+
+                      {/* Credit/Debit breakdown for open positions */}
+                      {isOpenSegment && (
+                        <div className="grid grid-cols-3 gap-3 mt-3 mb-2 text-xs">
+                          <div>
+                            <p className="text-muted-foreground mb-0.5">Credit</p>
+                            <p className="font-semibold tabular-nums text-green-600" data-testid={`segment-${index}-credit`}>
+                              {formatCurrency(segment.credit ?? 0)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground mb-0.5">Debit</p>
+                            <p className="font-semibold tabular-nums text-red-600" data-testid={`segment-${index}-debit`}>
+                              {formatCurrency(segment.debit ?? 0)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground mb-0.5">Net</p>
+                            <p className={`font-semibold tabular-nums ${segment.netCredit >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid={`segment-${index}-net`}>
+                              {formatCurrency(segment.netCredit)}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground mb-0.5">Net</p>
-                          <p className={`font-semibold tabular-nums ${segment.netCredit >= 0 ? 'text-green-600' : 'text-red-600'}`} data-testid={`segment-${index}-net`}>
-                            {formatCurrency(segment.netCredit)}
-                          </p>
-                        </div>
-                      </div>
+                      )}
 
                       {/* Show roll details for non-initial positions */}
                       {!isFirst && rolledIntoDate && (
