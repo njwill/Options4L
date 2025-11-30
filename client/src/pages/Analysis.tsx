@@ -16,6 +16,7 @@ import {
 import { StrategyBadge } from '@/components/StrategyBadge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
+import { calculateGreeks, calculatePositionGreeks, calculateIntrinsicExtrinsic, formatDelta, formatGamma, formatTheta, formatVega, type GreeksResult } from '@/lib/blackScholes';
 import { useAuth } from '@/hooks/use-auth';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
@@ -64,7 +65,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
   const [tagSymbolFilter, setTagSymbolFilter] = useState<string>('all');
   const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
   
-  const { getAllCachedPrices, hasCachedPrices, lastRefreshTime } = usePriceCache();
+  const { getAllCachedPrices, getPositionPrices, hasCachedPrices, lastRefreshTime } = usePriceCache();
   const { user } = useAuth();
   const isAuthenticated = !!user;
 
@@ -135,6 +136,83 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
     } catch {
       return dateStr;
     }
+  };
+
+  // Helper to get live data for an open position in a roll chain
+  interface PositionLiveData {
+    livePL: number | null;
+    legs: Array<{
+      legId: string;
+      legInfo: any;
+      data: any;
+      greeks: GreeksResult | null;
+      intrinsicExtrinsic: { intrinsicValue: number; extrinsicValue: number; moneyness: string; isITM: boolean; isOTM: boolean; isATM: boolean } | null;
+    }>;
+    positionGreeks: { totalDelta: number; totalGamma: number; totalTheta: number; totalVega: number } | null;
+    hasData: boolean;
+  }
+
+  const getPositionLiveData = (position: Position): PositionLiveData => {
+    // Use getPositionPrices to get cached data directly for this position
+    const cachedPrices = getPositionPrices(position.id);
+    const livePL = calculateLivePositionPL(position as any, cachedPrices as any);
+    
+    const legs: PositionLiveData['legs'] = [];
+    
+    if (position.legs && Array.isArray(position.legs)) {
+      position.legs.forEach((leg: any, i: number) => {
+        const legId = `${position.id}-leg-${i}`;
+        const data = cachedPrices?.[legId] || null;
+        
+        let greeks: GreeksResult | null = null;
+        let intrinsicExtrinsic = null;
+        
+        if (data && !data.error && data.underlyingPrice && leg.expiration) {
+          const mark = data.mark || (((data.bid || 0) + (data.ask || 0)) / 2);
+          
+          // Calculate Greeks
+          greeks = calculateGreeks({
+            underlyingPrice: data.underlyingPrice,
+            strikePrice: leg.strike,
+            expirationDate: leg.expiration,
+            optionType: (leg.optionType?.toLowerCase() || 'call') as 'call' | 'put',
+            impliedVolatility: data.impliedVolatility,
+            marketPrice: mark,
+          });
+          
+          // Calculate intrinsic/extrinsic
+          if (data.type) {
+            intrinsicExtrinsic = calculateIntrinsicExtrinsic(
+              data.underlyingPrice,
+              data.strike || leg.strike,
+              data.type.toLowerCase() as 'call' | 'put',
+              mark
+            );
+          }
+        }
+        
+        legs.push({ legId, legInfo: leg, data, greeks, intrinsicExtrinsic });
+      });
+    }
+    
+    // Calculate position-level Greeks
+    let positionGreeks = null;
+    const legsWithGreeks = legs.filter(l => l.greeks).map(l => ({
+      greeks: l.greeks!,
+      quantity: l.legInfo.quantity || 1,
+      transCode: l.legInfo.transCode || 'BTO',
+    }));
+    
+    if (legsWithGreeks.length > 0) {
+      positionGreeks = calculatePositionGreeks(legsWithGreeks);
+    }
+    
+    return {
+      livePL,
+      legs,
+      positionGreeks,
+      hasData: legs.some(l => l.data && !l.data.error),
+    };
   };
 
   // Get all unique symbols from roll chains
@@ -850,48 +928,200 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                                         {chain.segments.map((segment, idx) => {
                                           const position = chain.positions.find(p => p.id === segment.positionId);
                                           const isFirst = idx === 0;
+                                          const isOpenPosition = position?.status === 'open';
+                                          const liveData = isOpenPosition && position ? getPositionLiveData(position) : null;
                                           
                                           return (
                                             <div 
                                               key={`${chain.chainId}-seg-${idx}`}
-                                              className="flex items-center gap-4 p-3 bg-card rounded-md border"
+                                              className={`p-3 bg-card rounded-md border ${isOpenPosition ? 'border-primary/30' : ''}`}
                                             >
-                                              <div className="flex items-center gap-2">
-                                                {!isFirst && (
-                                                  <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                                              {/* Header row */}
+                                              <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-2">
+                                                  {!isFirst && (
+                                                    <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                                                  )}
+                                                  <span className="text-xs font-mono text-muted-foreground">
+                                                    {isFirst ? 'OPEN' : `ROLL ${idx}`}
+                                                  </span>
+                                                </div>
+                                              
+                                                <div className="flex-1 grid grid-cols-4 gap-4 text-sm">
+                                                  <div>
+                                                    <span className="text-muted-foreground">Date: </span>
+                                                    <span className="tabular-nums">
+                                                      {segment.rollDate ? formatDate(segment.rollDate) : formatDate(chain.firstEntryDate)}
+                                                    </span>
+                                                  </div>
+                                                  <div>
+                                                    <span className="text-muted-foreground">Expiration: </span>
+                                                    <span className="tabular-nums">{formatDate(segment.toExpiration)}</span>
+                                                  </div>
+                                                  <div>
+                                                    <span className="text-muted-foreground">Strike: </span>
+                                                    <span className="tabular-nums">${segment.toStrike}</span>
+                                                  </div>
+                                                  <div>
+                                                    <span className="text-muted-foreground">Entry: </span>
+                                                    <span className={`tabular-nums font-medium ${segment.netCredit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                      {formatCurrency(segment.netCredit)}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              
+                                                {position && (
+                                                  <Badge variant={position.status === 'open' ? 'default' : 'secondary'} className="text-xs">
+                                                    {position.status}
+                                                  </Badge>
                                                 )}
-                                                <span className="text-xs font-mono text-muted-foreground">
-                                                  {isFirst ? 'OPEN' : `ROLL ${idx}`}
-                                                </span>
                                               </div>
                                               
-                                              <div className="flex-1 grid grid-cols-4 gap-4 text-sm">
-                                                <div>
-                                                  <span className="text-muted-foreground">Date: </span>
-                                                  <span className="tabular-nums">
-                                                    {segment.rollDate ? formatDate(segment.rollDate) : formatDate(chain.firstEntryDate)}
-                                                  </span>
+                                              {/* Live Data Section for Open Positions */}
+                                              {isOpenPosition && liveData && liveData.hasData && (
+                                                <div className="mt-3 pt-3 border-t border-border/50">
+                                                  <div className="flex items-center gap-2 mb-2">
+                                                    <Zap className="h-3 w-3 text-yellow-500" />
+                                                    <span className="text-xs font-medium text-muted-foreground">Live Data</span>
+                                                  </div>
+                                                  
+                                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                    {/* Live P/L */}
+                                                    {liveData.livePL !== null && (
+                                                      <div className="bg-muted/30 rounded-md p-2">
+                                                        <div className="text-[10px] text-muted-foreground mb-1">Live P/L</div>
+                                                        <div className={`text-sm font-semibold tabular-nums ${liveData.livePL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                          {formatCurrency(liveData.livePL)}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                    
+                                                    {/* Position Greeks */}
+                                                    {liveData.positionGreeks && (
+                                                      <div className="bg-muted/30 rounded-md p-2">
+                                                        <div className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1">
+                                                          <Activity className="h-3 w-3" />
+                                                          Position Greeks
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                                                          <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">Δ</span>
+                                                            <span className={`font-mono tabular-nums ${liveData.positionGreeks.totalDelta >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                              ${liveData.positionGreeks.totalDelta.toFixed(0)}
+                                                            </span>
+                                                          </div>
+                                                          <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">Γ</span>
+                                                            <span className="font-mono tabular-nums">
+                                                              {liveData.positionGreeks.totalGamma.toFixed(2)}
+                                                            </span>
+                                                          </div>
+                                                          <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">Θ</span>
+                                                            <span className={`font-mono tabular-nums ${liveData.positionGreeks.totalTheta >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                              ${liveData.positionGreeks.totalTheta.toFixed(2)}
+                                                            </span>
+                                                          </div>
+                                                          <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">ν</span>
+                                                            <span className="font-mono tabular-nums">
+                                                              ${liveData.positionGreeks.totalVega.toFixed(2)}
+                                                            </span>
+                                                          </div>
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                    
+                                                    {/* Leg Details with Intrinsic/Extrinsic */}
+                                                    {liveData.legs.map(({ legId, legInfo, data, greeks, intrinsicExtrinsic }) => {
+                                                      if (!data || data.error) return null;
+                                                      const mark = data.mark || (((data.bid || 0) + (data.ask || 0)) / 2);
+                                                      const isShort = legInfo.transCode === 'STO' || legInfo.transCode === 'STC';
+                                                      
+                                                      return (
+                                                        <div key={legId} className="bg-muted/30 rounded-md p-2 col-span-2">
+                                                          <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-[10px] text-muted-foreground">
+                                                              ${legInfo.strike} {legInfo.optionType?.toUpperCase()} • {isShort ? 'Short' : 'Long'} {legInfo.quantity || 1}
+                                                            </span>
+                                                            {intrinsicExtrinsic && (
+                                                              <Badge 
+                                                                variant="outline" 
+                                                                className={`text-[10px] px-1.5 py-0 ${
+                                                                  intrinsicExtrinsic.isITM ? 'border-green-500 text-green-600' :
+                                                                  intrinsicExtrinsic.isOTM ? 'border-red-500 text-red-600' :
+                                                                  'border-muted-foreground'
+                                                                }`}
+                                                              >
+                                                                {intrinsicExtrinsic.moneyness}
+                                                              </Badge>
+                                                            )}
+                                                          </div>
+                                                          
+                                                          <div className="grid grid-cols-3 gap-2 text-xs">
+                                                            <div>
+                                                              <span className="text-muted-foreground text-[10px] block">Mark</span>
+                                                              <span className="font-semibold tabular-nums">${mark.toFixed(2)}</span>
+                                                            </div>
+                                                            {intrinsicExtrinsic && (
+                                                              <>
+                                                                <div>
+                                                                  <span className="text-muted-foreground text-[10px] block">Intrinsic</span>
+                                                                  <span className={`font-medium tabular-nums ${intrinsicExtrinsic.intrinsicValue > 0 ? 'text-green-600' : ''}`}>
+                                                                    ${intrinsicExtrinsic.intrinsicValue.toFixed(2)}
+                                                                  </span>
+                                                                </div>
+                                                                <div>
+                                                                  <span className="text-muted-foreground text-[10px] block">Extrinsic</span>
+                                                                  <span className="font-medium tabular-nums text-amber-600">
+                                                                    ${intrinsicExtrinsic.extrinsicValue.toFixed(2)}
+                                                                  </span>
+                                                                </div>
+                                                              </>
+                                                            )}
+                                                          </div>
+                                                          
+                                                          {greeks && (
+                                                            <div className="mt-1.5 pt-1.5 border-t border-border/30 grid grid-cols-4 gap-1 text-[10px]">
+                                                              <div className="flex justify-between">
+                                                                <span className="text-muted-foreground">Δ</span>
+                                                                <span className="font-mono">{formatDelta(greeks.delta)}</span>
+                                                              </div>
+                                                              <div className="flex justify-between">
+                                                                <span className="text-muted-foreground">Γ</span>
+                                                                <span className="font-mono">{formatGamma(greeks.gamma)}</span>
+                                                              </div>
+                                                              <div className="flex justify-between">
+                                                                <span className="text-muted-foreground">Θ</span>
+                                                                <span className={`font-mono ${greeks.theta < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                                                  {formatTheta(greeks.theta)}
+                                                                </span>
+                                                              </div>
+                                                              <div className="flex justify-between">
+                                                                <span className="text-muted-foreground">IV</span>
+                                                                <span className="font-mono">{(greeks.impliedVolatility * 100).toFixed(0)}%</span>
+                                                              </div>
+                                                            </div>
+                                                          )}
+                                                          
+                                                          {data.underlyingPrice && (
+                                                            <div className="mt-1 text-[10px] text-muted-foreground">
+                                                              {chain.symbol} @ ${data.underlyingPrice.toFixed(2)}
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      );
+                                                    })}
+                                                  </div>
                                                 </div>
-                                                <div>
-                                                  <span className="text-muted-foreground">Expiration: </span>
-                                                  <span className="tabular-nums">{formatDate(segment.toExpiration)}</span>
-                                                </div>
-                                                <div>
-                                                  <span className="text-muted-foreground">Strike: </span>
-                                                  <span className="tabular-nums">${segment.toStrike}</span>
-                                                </div>
-                                                <div>
-                                                  <span className="text-muted-foreground">Net: </span>
-                                                  <span className={`tabular-nums font-medium ${segment.netCredit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {formatCurrency(segment.netCredit)}
-                                                  </span>
-                                                </div>
-                                              </div>
+                                              )}
                                               
-                                              {position && (
-                                                <Badge variant={position.status === 'open' ? 'default' : 'secondary'} className="text-xs">
-                                                  {position.status}
-                                                </Badge>
+                                              {/* Prompt to load prices if open but no data */}
+                                              {isOpenPosition && (!liveData || !liveData.hasData) && (
+                                                <div className="mt-2 pt-2 border-t border-border/30 text-xs text-muted-foreground flex items-center gap-2">
+                                                  <Activity className="h-3 w-3" />
+                                                  <span>Load live prices from Open Positions page to see Greeks &amp; live data</span>
+                                                </div>
                                               )}
                                             </div>
                                           );
