@@ -61,6 +61,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
   const [symbolFilter, setSymbolFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [tagSymbolFilter, setTagSymbolFilter] = useState<string>('all');
   const [positionHashes, setPositionHashes] = useState<Map<string, string>>(new Map());
   
   const { getAllCachedPrices, hasCachedPrices, lastRefreshTime } = usePriceCache();
@@ -141,6 +142,12 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
     const symbols = new Set(rollChains.map(rc => rc.symbol));
     return Array.from(symbols).sort();
   }, [rollChains]);
+
+  // Get all unique symbols from positions (for tag analysis)
+  const uniquePositionSymbols = useMemo(() => {
+    const symbols = new Set(positions.map(p => p.symbol));
+    return Array.from(symbols).sort();
+  }, [positions]);
 
   // Enrich roll chains with position data and live prices
   const enrichedRollChains = useMemo((): RollChainWithDetails[] => {
@@ -275,8 +282,10 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
       : availableTags;
     
     return tagsToAnalyze.map(tag => {
-      // Find positions that have this tag
+      // Find positions that have this tag (and match symbol filter)
       const taggedPositions = positions.filter(pos => {
+        // Apply symbol filter
+        if (tagSymbolFilter !== 'all' && pos.symbol !== tagSymbolFilter) return false;
         const posTags = getPositionTags(pos.id);
         return posTags.some(t => t.id === tag.id);
       });
@@ -329,7 +338,7 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
         strategyBreakdown,
       };
     });
-  }, [isAuthenticated, availableTags, selectedTagIds, positions, positionTagsData, getAllCachedPrices, hasCachedPrices]);
+  }, [isAuthenticated, availableTags, selectedTagIds, tagSymbolFilter, positions, positionTagsData, getAllCachedPrices, hasCachedPrices]);
 
   // Aggregate stats when multiple tags are selected
   const aggregateTagStats = useMemo(() => {
@@ -974,6 +983,26 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
               )}
             </CardContent>
           </Card>
+
+          {/* Symbol Filter */}
+          <div className="flex items-center gap-4">
+            <Select value={tagSymbolFilter} onValueChange={setTagSymbolFilter}>
+              <SelectTrigger className="w-[180px]" data-testid="select-tag-symbol-filter">
+                <SelectValue placeholder="Filter by symbol" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Symbols</SelectItem>
+                {uniquePositionSymbols.map(symbol => (
+                  <SelectItem key={symbol} value={symbol}>{symbol}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {tagSymbolFilter !== 'all' && (
+              <span className="text-sm text-muted-foreground">
+                Filtering by {tagSymbolFilter}
+              </span>
+            )}
+          </div>
 
           {/* Summary Cards - Show when tags exist */}
           {aggregateTagStats && tagAnalytics.length > 0 && (
