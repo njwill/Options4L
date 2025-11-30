@@ -1,11 +1,46 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronRight, Zap } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronDown, ChevronRight, Zap, Activity, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { RollChain, Position } from '@shared/schema';
-import { format } from 'date-fns';
-import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
+import { format, differenceInDays } from 'date-fns';
+import { usePriceCache, calculateLivePositionPL, type LegPriceData } from '@/hooks/use-price-cache';
+import { 
+  calculateGreeks, 
+  calculateIntrinsicExtrinsic,
+  formatDelta,
+  formatGamma,
+  formatTheta,
+  formatVega,
+  type GreeksResult
+} from '@/lib/blackScholes';
+
+function getBestPriceFromData(priceData: LegPriceData): { price: number; isValid: boolean } {
+  if (priceData.mark && priceData.mark > 0) {
+    return { price: priceData.mark, isValid: true };
+  }
+  
+  const bid = priceData.bid || 0;
+  const ask = priceData.ask || 0;
+  if (bid > 0 && ask > 0) {
+    return { price: (bid + ask) / 2, isValid: true };
+  }
+  
+  const last = priceData.last || 0;
+  if (last > 0) {
+    return { price: last, isValid: true };
+  }
+  
+  if (ask > 0) return { price: ask, isValid: true };
+  if (bid > 0) return { price: bid, isValid: true };
+  
+  const hasAnyPriceData = priceData.mark !== undefined || 
+                          priceData.bid !== undefined || 
+                          priceData.ask !== undefined;
+  
+  return { price: 0, isValid: hasAnyPriceData };
+}
 
 interface RollChainTimelineProps {
   chain: RollChain;
@@ -134,10 +169,12 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                 const segmentPosition = chainPositions.find(p => p.id === segment.positionId);
                 const isOpenSegment = segmentPosition?.status === 'open';
                 
+                // Get cached prices for this position
+                const cachedPrices = segmentPosition ? getPositionPrices(segmentPosition.id) : null;
+                
                 // Calculate live P/L for this segment if it's open
                 let segmentLivePL: number | null = null;
-                if (isOpenSegment && segmentPosition) {
-                  const cachedPrices = getPositionPrices(segmentPosition.id);
+                if (isOpenSegment && segmentPosition && cachedPrices) {
                   segmentLivePL = calculateLivePositionPL(segmentPosition as any, cachedPrices as any);
                 }
 
@@ -145,6 +182,69 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
                 // (previous segment's rollDate = when it was rolled into THIS segment)
                 const prevSegment = index > 0 ? chain.segments[index - 1] : null;
                 const rolledIntoDate = prevSegment?.rollDate;
+
+                // Calculate option details for open segments with live data
+                const legDetails = isOpenSegment && segmentPosition?.legs && cachedPrices ? segmentPosition.legs.map((leg, legIndex) => {
+                  const legId = `${segmentPosition.id}-leg-${legIndex}`;
+                  const priceData = cachedPrices[legId];
+                  
+                  // Skip if no price data at all
+                  if (!priceData) return null;
+                  
+                  // Use the helper to get the best available price
+                  const { price: currentPrice, isValid } = getBestPriceFromData(priceData);
+                  
+                  const entryPrice = Math.abs(leg.amount) / leg.quantity / 100;
+                  const isSell = leg.transCode === 'STO' || leg.transCode === 'STC';
+                  
+                  // Calculate unrealized P/L - use isValid to determine if data exists
+                  // even if price is 0 (worthless options)
+                  const unrealizedPL = isValid ? (isSell 
+                    ? (entryPrice - currentPrice) * leg.quantity * 100
+                    : (currentPrice - entryPrice) * leg.quantity * 100) : null;
+                  
+                  // Calculate Greeks
+                  let greeks: GreeksResult | null = null;
+                  if (isValid && priceData.underlyingPrice && priceData.impliedVolatility && leg.expiration) {
+                    greeks = calculateGreeks({
+                      underlyingPrice: priceData.underlyingPrice,
+                      strikePrice: leg.strike,
+                      expirationDate: leg.expiration,
+                      optionType: (leg.optionType?.toLowerCase() || 'call') as 'call' | 'put',
+                      impliedVolatility: priceData.impliedVolatility,
+                      marketPrice: currentPrice,
+                    });
+                  }
+                  
+                  // Calculate intrinsic/extrinsic
+                  const intrinsicExtrinsic = (isValid && priceData.underlyingPrice) ? calculateIntrinsicExtrinsic(
+                    priceData.underlyingPrice,
+                    leg.strike,
+                    (leg.optionType?.toLowerCase() || 'call') as 'call' | 'put',
+                    currentPrice
+                  ) : null;
+                  
+                  // Calculate DTE
+                  const dte = leg.expiration ? differenceInDays(new Date(leg.expiration), new Date()) : null;
+                  
+                  return {
+                    leg,
+                    legIndex,
+                    legKey: leg.id || `${segmentPosition.id}-leg-${legIndex}`,
+                    priceData,
+                    currentPrice,
+                    entryPrice,
+                    unrealizedPL,
+                    greeks,
+                    intrinsicExtrinsic,
+                    dte,
+                    isSell,
+                    hasValidPrice: isValid,
+                  };
+                }).filter(Boolean) : [];
+                
+                // Show message when no leg data available for open segments
+                const hasLiveCacheForPosition = cachedPrices && Object.keys(cachedPrices).length > 0;
 
                 return (
                   <div key={segment.positionId} className="relative pl-10" data-testid={`segment-${index}`}>
@@ -206,13 +306,160 @@ export function RollChainTimeline({ chain, chainPositions = [] }: RollChainTimel
 
                       {/* Show roll details for non-initial positions */}
                       {!isFirst && rolledIntoDate && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-muted-foreground mb-2">
                           Rolled on {formatDate(rolledIntoDate)}
                           {segment.fromExpiration && segment.toExpiration && segment.fromExpiration !== segment.toExpiration && 
                             ` (${formatDate(segment.fromExpiration)} → ${formatDate(segment.toExpiration)})`}
                           {segment.fromStrike && segment.toStrike && segment.fromStrike !== segment.toStrike && 
                             ` • Strike: $${segment.fromStrike} → $${segment.toStrike}`}
                         </p>
+                      )}
+                      
+                      {/* Option Details for open segments with live data */}
+                      {isOpenSegment && hasLiveCacheForPosition && legDetails.length === 0 && (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                          <p className="text-xs text-muted-foreground">
+                            Live data unavailable for this position
+                          </p>
+                        </div>
+                      )}
+                      {isOpenSegment && legDetails.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-border/50 space-y-3">
+                          {legDetails.map((detail) => {
+                            if (!detail) return null;
+                            const { leg, legIndex, legKey, currentPrice, entryPrice, unrealizedPL, greeks, intrinsicExtrinsic, dte, priceData, hasValidPrice } = detail;
+                            
+                            return (
+                              <div key={legKey} className="bg-muted/30 rounded-md p-2.5">
+                                {/* Leg header */}
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium">{leg.transCode}</span>
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                      {leg.optionType}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      ${leg.strike} • {leg.quantity} contracts
+                                    </span>
+                                    {dte !== null && (
+                                      <span className="text-xs text-muted-foreground">
+                                        ({dte} DTE)
+                                      </span>
+                                    )}
+                                  </div>
+                                  {intrinsicExtrinsic && (
+                                    <Badge 
+                                      variant="outline" 
+                                      className={`text-[10px] ${
+                                        intrinsicExtrinsic.isITM ? 'border-green-500 text-green-600' :
+                                        intrinsicExtrinsic.isOTM ? 'border-red-500 text-red-600' :
+                                        'border-muted-foreground'
+                                      }`}
+                                    >
+                                      {intrinsicExtrinsic.moneyness}
+                                    </Badge>
+                                  )}
+                                </div>
+                                
+                                {/* Current vs Entry - show N/A if no valid price */}
+                                <div className="flex items-center justify-between text-xs mb-2">
+                                  <div className="flex items-center gap-3 text-muted-foreground">
+                                    <span>Current: <span className="font-medium text-foreground">{hasValidPrice ? formatCurrency(currentPrice) : 'N/A'}</span></span>
+                                    <span>vs Entry: <span className="font-medium text-foreground">{formatCurrency(entryPrice)}</span></span>
+                                  </div>
+                                  {unrealizedPL !== null ? (
+                                    <div className={`flex items-center gap-1 font-semibold ${unrealizedPL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {unrealizedPL > 0 ? <TrendingUp className="h-3 w-3" /> : unrealizedPL < 0 ? <TrendingDown className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+                                      <span>{formatCurrency(unrealizedPL)}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">P/L: N/A</span>
+                                  )}
+                                </div>
+                                
+                                {/* Greeks */}
+                                {greeks && (
+                                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground mb-2">
+                                    <Activity className="w-3 h-3" />
+                                    <span>Greeks:</span>
+                                    <div className="flex flex-wrap gap-2 ml-1">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="cursor-help">
+                                            <span className="text-muted-foreground">Δ:</span>{' '}
+                                            <span className="font-mono tabular-nums text-foreground">{formatDelta(greeks.delta)}</span>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="text-xs">Delta: Price change per $1 stock move</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="cursor-help">
+                                            <span className="text-muted-foreground">Γ:</span>{' '}
+                                            <span className="font-mono tabular-nums text-foreground">{formatGamma(greeks.gamma)}</span>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="text-xs">Gamma: Rate of Delta change</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="cursor-help">
+                                            <span className="text-muted-foreground">Θ:</span>{' '}
+                                            <span className={`font-mono tabular-nums ${greeks.theta < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                              {formatTheta(greeks.theta)}
+                                            </span>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="text-xs">Theta: Daily time decay per contract</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="cursor-help">
+                                            <span className="text-muted-foreground">ν:</span>{' '}
+                                            <span className="font-mono tabular-nums text-foreground">{formatVega(greeks.vega)}</span>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="text-xs">Vega: Price change per 1% IV move</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                      {priceData.impliedVolatility && (
+                                        <span className="ml-1">
+                                          <span className="text-muted-foreground">IV:</span>{' '}
+                                          <span className="font-mono tabular-nums text-foreground">{(priceData.impliedVolatility * 100).toFixed(1)}%</span>
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Intrinsic/Extrinsic */}
+                                {intrinsicExtrinsic && (
+                                  <div className="flex items-center gap-4 text-xs">
+                                    <span>
+                                      <span className="text-muted-foreground">Intrinsic:</span>{' '}
+                                      <span className={`font-mono tabular-nums font-medium ${intrinsicExtrinsic.intrinsicValue > 0 ? 'text-green-600' : ''}`}>
+                                        ${intrinsicExtrinsic.intrinsicValue.toFixed(2)}
+                                      </span>
+                                    </span>
+                                    <span>
+                                      <span className="text-muted-foreground">Extrinsic:</span>{' '}
+                                      <span className="font-mono tabular-nums font-medium text-amber-600">
+                                        ${intrinsicExtrinsic.extrinsicValue.toFixed(2)}
+                                      </span>
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>
