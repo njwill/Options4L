@@ -237,6 +237,7 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
           <Bar
             dataKey="realizedPL"
             name="Realized P/L"
+            stackId="pl"
             radius={[2, 2, 0, 0]}
           >
             {chartData.map((entry, index) => (
@@ -250,6 +251,7 @@ export function PLOverTimeChart({ positions, livePLData }: PLOverTimeChartProps)
             <Bar
               dataKey="unrealizedPL"
               name="Unrealized P/L"
+              stackId="pl"
               radius={[2, 2, 0, 0]}
             >
               {chartData.map((entry, index) => (
