@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,16 +37,24 @@ interface AIPortfolioReportProps {
   stockHoldings?: StockHolding[];
 }
 
-interface AnalysisResponse {
+interface JobSubmitResponse {
   success: boolean;
-  analysis?: string;
-  meta?: {
-    openPositionsAnalyzed: number;
-    closedPositionsAnalyzed: number;
-    generatedAt: string;
-  };
+  jobId?: string;
+  status?: string;
   message?: string;
 }
+
+interface JobStatusResponse {
+  success: boolean;
+  jobId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  analysis?: string;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+type PollingState = 'idle' | 'polling' | 'completed' | 'failed';
 
 export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AIPortfolioReportProps) {
   const { user } = useAuth();
@@ -55,11 +63,98 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
   
   const [report, setReport] = useState<string | null>(null);
   const [reportMeta, setReportMeta] = useState<{ openPositionsAnalyzed: number; closedPositionsAnalyzed: number; generatedAt: string } | null>(null);
+  
+  // Polling state
+  const [pollingState, setPollingState] = useState<PollingState>('idle');
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [pollingError, setPollingError] = useState<string | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   const openPositions = useMemo(() => positions.filter(p => p.status === 'open'), [positions]);
   const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
 
   const hasLiveData = hasCachedPrices();
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, []);
+  
+  // Stop polling helper
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  }, []);
+  
+  // Poll for job status
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const res = await fetch(`/api/ai/job/${jobId}`, {
+        credentials: 'include',
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to check job status');
+      }
+      
+      const data: JobStatusResponse = await res.json();
+      
+      if (data.status === 'completed' && data.analysis) {
+        stopPolling();
+        setReport(data.analysis);
+        setReportMeta({
+          openPositionsAnalyzed: openPositions.length,
+          closedPositionsAnalyzed: Math.min(closedPositions.length, 10),
+          generatedAt: data.completedAt || new Date().toISOString(),
+        });
+        setPollingState('completed');
+        setCurrentJobId(null);
+      } else if (data.status === 'failed') {
+        stopPolling();
+        setPollingError(data.error || 'Analysis failed');
+        setPollingState('failed');
+        setCurrentJobId(null);
+      }
+      // If queued or running, continue polling
+    } catch (error) {
+      console.error('Poll error:', error);
+      // Don't stop polling on transient errors, but log them
+    }
+  }, [stopPolling, openPositions.length, closedPositions.length]);
+  
+  // Start polling for a job
+  const startPolling = useCallback((jobId: string) => {
+    setCurrentJobId(jobId);
+    setPollingState('polling');
+    setPollingError(null);
+    setElapsedTime(0);
+    startTimeRef.current = Date.now();
+    
+    // Update elapsed time every second
+    timerIntervalRef.current = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+    
+    // Poll every 3 seconds
+    pollingIntervalRef.current = setInterval(() => {
+      pollJobStatus(jobId);
+    }, 3000);
+    
+    // Also poll immediately
+    pollJobStatus(jobId);
+  }, [pollJobStatus]);
 
   const buildLiveDataMap = () => {
     const liveDataMap: Record<string, any> = {};
@@ -144,7 +239,7 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
     return liveDataMap;
   };
 
-  const analysisMutation = useMutation({
+  const submitJobMutation = useMutation({
     mutationFn: async () => {
       const liveDataMap = buildLiveDataMap();
       
@@ -177,18 +272,30 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
         liveDataMap,
       });
       
-      return res.json() as Promise<AnalysisResponse>;
+      return res.json() as Promise<JobSubmitResponse>;
     },
     onSuccess: (data) => {
-      if (data.success && data.analysis) {
-        setReport(data.analysis);
-        setReportMeta(data.meta || null);
+      if (data.success && data.jobId) {
+        // Start polling for job completion
+        startPolling(data.jobId);
+      } else {
+        setPollingError(data.message || 'Failed to submit analysis job');
+        setPollingState('failed');
       }
     },
+    onError: (error) => {
+      setPollingError(error instanceof Error ? error.message : 'Failed to submit analysis job');
+      setPollingState('failed');
+    },
   });
+  
+  const isProcessing = submitJobMutation.isPending || pollingState === 'polling';
 
   const handleGenerateReport = () => {
-    analysisMutation.mutate();
+    // Reset state and submit new job
+    setPollingState('idle');
+    setPollingError(null);
+    submitJobMutation.mutate();
   };
 
   if (!isAuthenticated) {
@@ -248,13 +355,15 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
               
               <Button 
                 onClick={handleGenerateReport}
-                disabled={analysisMutation.isPending}
+                disabled={isProcessing}
                 data-testid="button-generate-ai-report"
               >
-                {analysisMutation.isPending ? (
+                {isProcessing ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Analyzing...
+                    {pollingState === 'polling' 
+                      ? `Analyzing... (${elapsedTime}s)` 
+                      : 'Submitting...'}
                   </>
                 ) : report ? (
                   <>
@@ -322,7 +431,7 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
         </CardContent>
       </Card>
 
-      {analysisMutation.isError && (
+      {(pollingState === 'failed' || submitJobMutation.isError) && (
         <Card className="border-destructive">
           <CardContent className="py-6">
             <div className="flex items-start gap-3">
@@ -330,10 +439,29 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
               <div>
                 <div className="font-medium text-destructive">Failed to Generate Analysis</div>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {analysisMutation.error instanceof Error 
-                    ? analysisMutation.error.message 
-                    : 'An unexpected error occurred. Please try again.'}
+                  {pollingError || 
+                    (submitJobMutation.error instanceof Error 
+                      ? submitJobMutation.error.message 
+                      : 'An unexpected error occurred. Please try again.')}
                 </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {pollingState === 'polling' && (
+        <Card>
+          <CardContent className="py-8">
+            <div className="flex flex-col items-center justify-center text-center">
+              <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
+              <h3 className="text-lg font-medium mb-2">Analyzing Your Portfolio</h3>
+              <p className="text-muted-foreground text-sm max-w-md">
+                Claude is analyzing your {openPositions.length} open positions with live pricing data, 
+                Greeks exposure, and historical performance. This typically takes 30-90 seconds.
+              </p>
+              <div className="mt-4 text-sm text-muted-foreground tabular-nums">
+                Elapsed: {elapsedTime}s
               </div>
             </div>
           </CardContent>

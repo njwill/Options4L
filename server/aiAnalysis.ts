@@ -28,7 +28,8 @@ const jobs = new Map<string, AnalysisJob>();
 const JOB_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 setInterval(() => {
   const now = Date.now();
-  for (const [id, job] of jobs.entries()) {
+  const entries = Array.from(jobs.entries());
+  for (const [id, job] of entries) {
     if (now - job.createdAt.getTime() > JOB_EXPIRY_MS) {
       jobs.delete(id);
     }
