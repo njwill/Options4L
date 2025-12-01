@@ -21,6 +21,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { computePositionHash } from '@/lib/positionHash';
+import { AIPortfolioReport } from '@/components/AIPortfolioReport';
 import type { Position, RollChain, StockHolding, Tag } from '@shared/schema';
 import { format, differenceInDays } from 'date-fns';
 import { 
@@ -39,10 +40,11 @@ import {
   TrendingUp,
   Percent,
   BarChart3,
-  Filter
+  Filter,
+  Sparkles
 } from 'lucide-react';
 
-type AnalysisType = 'rolls' | 'tags';
+type AnalysisType = 'rolls' | 'tags' | 'ai';
 
 interface AnalysisProps {
   positions: Position[];
@@ -678,6 +680,12 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
               <SelectItem value="rolls">Roll Analysis</SelectItem>
               <SelectItem value="tags" disabled={!isAuthenticated}>
                 Tag Analysis {!isAuthenticated && '(Sign in)'}
+              </SelectItem>
+              <SelectItem value="ai">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3" />
+                  AI Report
+                </span>
               </SelectItem>
             </SelectContent>
           </Select>
@@ -1811,6 +1819,25 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* AI Report */}
+      {analysisType === 'ai' && (
+        <AIPortfolioReport 
+          positions={positions}
+          summary={{
+            totalPL: positions.reduce((sum, p) => sum + p.netPL, 0),
+            realizedPL: positions.filter(p => p.status === 'closed').reduce((sum, p) => sum + p.netPL, 0),
+            openPositionsCount: positions.filter(p => p.status === 'open').length,
+            closedPositionsCount: positions.filter(p => p.status === 'closed').length,
+            winRate: positions.filter(p => p.status === 'closed').length > 0
+              ? (positions.filter(p => p.status === 'closed' && p.netPL > 0).length / positions.filter(p => p.status === 'closed').length) * 100
+              : 0,
+            totalWins: positions.filter(p => p.status === 'closed' && p.netPL > 0).length,
+            totalLosses: positions.filter(p => p.status === 'closed' && p.netPL <= 0).length,
+          }}
+          stockHoldings={stockHoldings}
+        />
       )}
     </div>
   );

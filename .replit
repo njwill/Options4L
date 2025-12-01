@@ -93,3 +93,6 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[agent]
+integrations = ["javascript_anthropic_ai_integrations:1.0.0"]

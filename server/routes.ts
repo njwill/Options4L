@@ -5,6 +5,7 @@ import multer from "multer";
 import { parseFile, consolidateTransactions } from "./utils/csvParser";
 import { buildPositions, calculateSummary } from "./utils/positionBuilder";
 import { buildStockHoldings } from "./utils/stockHoldingsBuilder";
+import { generatePortfolioAnalysis, type PositionForAnalysis, type PortfolioAnalysisInput } from "./aiAnalysis";
 import authRoutes from "./authRoutes";
 import { 
   createUploadRecord, 
@@ -1970,6 +1971,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to lookup position tags',
+      });
+    }
+  });
+
+  // AI Portfolio Analysis endpoint
+  app.post('/api/ai/analyze-portfolio', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { positions, summary, stockHoldings, liveDataMap } = req.body;
+
+      if (!positions || !Array.isArray(positions)) {
+        return res.status(400).json({ success: false, message: 'Positions array required' });
+      }
+
+      if (!summary) {
+        return res.status(400).json({ success: false, message: 'Summary data required' });
+      }
+
+      // Transform positions with live data for analysis
+      const openPositions: PositionForAnalysis[] = [];
+      const closedPositions: PositionForAnalysis[] = [];
+
+      for (const pos of positions) {
+        const liveData = liveDataMap?.[pos.id];
+        
+        const analysisPos: PositionForAnalysis = {
+          id: pos.id,
+          symbol: pos.symbol,
+          strategyType: pos.strategyType || 'Unknown',
+          status: pos.status,
+          netPL: pos.netPL || 0,
+          entryDate: pos.entryDate,
+          exitDate: pos.exitDate,
+          legs: (pos.legs || []).map((leg: any) => ({
+            strike: leg.strike,
+            expiration: leg.expiration,
+            optionType: (leg.optionType || 'call').toLowerCase() as 'call' | 'put',
+            quantity: leg.quantity || 1,
+            transCode: leg.transCode || 'BTO',
+            premium: leg.premium,
+          })),
+        };
+
+        // Add live data if available
+        if (liveData && pos.status === 'open') {
+          analysisPos.liveData = {
+            underlyingPrice: liveData.underlyingPrice || 0,
+            livePL: liveData.livePL ?? pos.netPL,
+            legs: (liveData.legs || []).map((leg: any) => ({
+              strike: leg.strike,
+              expiration: leg.expiration,
+              optionType: leg.optionType || 'call',
+              bid: leg.bid,
+              ask: leg.ask,
+              mark: leg.mark,
+              impliedVolatility: leg.impliedVolatility,
+              greeks: leg.greeks ? {
+                delta: leg.greeks.delta,
+                gamma: leg.greeks.gamma,
+                theta: leg.greeks.theta,
+                vega: leg.greeks.vega,
+              } : undefined,
+            })),
+            positionGreeks: liveData.positionGreeks ? {
+              totalDelta: liveData.positionGreeks.totalDelta,
+              totalGamma: liveData.positionGreeks.totalGamma,
+              totalTheta: liveData.positionGreeks.totalTheta,
+              totalVega: liveData.positionGreeks.totalVega,
+            } : undefined,
+          };
+        }
+
+        if (pos.status === 'open') {
+          openPositions.push(analysisPos);
+        } else {
+          closedPositions.push(analysisPos);
+        }
+      }
+
+      // Sort closed positions by exit date (most recent first)
+      closedPositions.sort((a, b) => {
+        if (!a.exitDate) return 1;
+        if (!b.exitDate) return -1;
+        return new Date(b.exitDate).getTime() - new Date(a.exitDate).getTime();
+      });
+
+      const analysisInput: PortfolioAnalysisInput = {
+        openPositions,
+        closedPositions,
+        summary: {
+          totalPL: summary.totalPL || 0,
+          realizedPL: summary.realizedPL || 0,
+          openPositionsCount: summary.openPositionsCount || openPositions.length,
+          closedPositionsCount: summary.closedPositionsCount || closedPositions.length,
+          winRate: summary.winRate || 0,
+          totalWins: summary.totalWins || 0,
+          totalLosses: summary.totalLosses || 0,
+        },
+        stockHoldings: stockHoldings?.map((h: any) => ({
+          symbol: h.symbol,
+          quantity: h.quantity,
+          averageCost: h.averageCost,
+          currentPrice: h.currentPrice,
+        })),
+      };
+
+      console.log(`[AI Analysis] Generating report for user ${req.user.id} with ${openPositions.length} open positions`);
+      
+      const analysis = await generatePortfolioAnalysis(analysisInput);
+
+      return res.json({
+        success: true,
+        analysis,
+        meta: {
+          openPositionsAnalyzed: openPositions.length,
+          closedPositionsAnalyzed: Math.min(closedPositions.length, 10),
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('AI Portfolio Analysis error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to generate portfolio analysis',
       });
     }
   });
