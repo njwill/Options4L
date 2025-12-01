@@ -631,30 +631,6 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
       : <ChevronDown className="w-4 h-4 text-primary" />;
   };
 
-  if (rollChains.length === 0) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold mb-2">Analysis</h1>
-          <p className="text-muted-foreground">Deep dive into your trading patterns and performance</p>
-        </div>
-        
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <RotateCcw className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No Roll Data Available</h3>
-              <p className="text-muted-foreground">
-                Upload your trading data to see roll analysis. Rolls are detected when you close and re-open 
-                similar positions on the same underlying.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -693,7 +669,22 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
       </div>
 
       {/* Roll Analysis Content */}
-      {analysisType === 'rolls' && (
+      {analysisType === 'rolls' && rollChains.length === 0 && (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center">
+              <RotateCcw className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Roll Data Available</h3>
+              <p className="text-muted-foreground">
+                Upload your trading data to see roll analysis. Rolls are detected when you close and re-open 
+                similar positions on the same underlying.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {analysisType === 'rolls' && rollChains.length > 0 && (
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
