@@ -148,8 +148,30 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
     mutationFn: async () => {
       const liveDataMap = buildLiveDataMap();
       
+      const trimmedPositions = positions.map(pos => ({
+        id: pos.id,
+        symbol: pos.symbol,
+        strategyType: pos.strategyType,
+        status: pos.status,
+        entryDate: pos.entryDate,
+        exitDate: pos.exitDate,
+        totalCredit: pos.totalCredit,
+        totalDebit: pos.totalDebit,
+        netPL: pos.netPL,
+        realizedPL: pos.realizedPL,
+        rollChainId: pos.rollChainId,
+        legs: pos.legs?.map((leg: any) => ({
+          strike: leg.strike,
+          expiration: leg.expiration,
+          optionType: leg.optionType,
+          quantity: leg.quantity,
+          transCode: leg.transCode,
+          premium: leg.premium,
+        })),
+      }));
+      
       const res = await apiRequest('POST', '/api/ai/analyze-portfolio', {
-        positions,
+        positions: trimmedPositions,
         summary,
         stockHoldings,
         liveDataMap,
