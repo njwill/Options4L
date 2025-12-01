@@ -102,6 +102,8 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
               ask: data.ask,
               mark,
               impliedVolatility: data.impliedVolatility,
+              quantity: leg.quantity || 1,
+              transCode: leg.transCode || 'BTO',
               greeks: greeks ? {
                 delta: greeks.delta,
                 gamma: greeks.gamma,
@@ -113,14 +115,21 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
         });
       }
       
-      const legsWithGreeks = legs.filter(l => l.greeks).map((l, i) => ({
-        greeks: l.greeks!,
-        quantity: (pos.legs as any)?.[i]?.quantity || 1,
-        transCode: (pos.legs as any)?.[i]?.transCode || 'BTO',
-      }));
+      const legsWithGreeks = legs.filter(l => l.greeks).map(l => {
+        const absQuantity = Math.abs(l.quantity);
+        const signedQuantity = l.transCode?.startsWith('S') ? -absQuantity : absQuantity;
+        return {
+          greeks: l.greeks!,
+          quantity: signedQuantity,
+          transCode: l.transCode,
+        };
+      });
       
       let positionGreeks = null;
-      if (legsWithGreeks.length > 0) {
+      const totalLegsCount = pos.legs?.length || 0;
+      const hasCompleteGreeksData = legsWithGreeks.length === totalLegsCount && totalLegsCount > 0;
+      
+      if (hasCompleteGreeksData) {
         positionGreeks = calculatePositionGreeks(legsWithGreeks as any);
       }
       
