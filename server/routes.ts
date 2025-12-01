@@ -5,7 +5,7 @@ import multer from "multer";
 import { parseFile, consolidateTransactions } from "./utils/csvParser";
 import { buildPositions, calculateSummary } from "./utils/positionBuilder";
 import { buildStockHoldings } from "./utils/stockHoldingsBuilder";
-import { generatePortfolioAnalysis, type PositionForAnalysis, type PortfolioAnalysisInput } from "./aiAnalysis";
+import { generatePortfolioAnalysis, createJob, getJob, processAnalysisJob, type PositionForAnalysis, type PortfolioAnalysisInput } from "./aiAnalysis";
 import authRoutes from "./authRoutes";
 import { 
   createUploadRecord, 
@@ -2080,24 +2080,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
       };
 
-      console.log(`[AI Analysis] Generating report for user ${req.user.id} with ${openPositions.length} open positions`);
+      console.log(`[AI Analysis] Creating job for user ${req.user.id} with ${openPositions.length} open positions`);
       
-      const analysis = await generatePortfolioAnalysis(analysisInput);
+      // Create job and return immediately
+      const job = createJob(req.user.id);
+      
+      // Start processing in background (fire-and-forget)
+      processAnalysisJob(job.id, analysisInput).catch(err => {
+        console.error(`[AI Analysis] Background processing failed for job ${job.id}:`, err);
+      });
 
-      return res.json({
+      // Return 202 Accepted with job ID for polling
+      return res.status(202).json({
         success: true,
-        analysis,
-        meta: {
-          openPositionsAnalyzed: openPositions.length,
-          closedPositionsAnalyzed: Math.min(closedPositions.length, 10),
-          generatedAt: new Date().toISOString(),
-        },
+        jobId: job.id,
+        status: 'queued',
+        message: 'Analysis job created. Poll /api/ai/job/:jobId for results.',
       });
     } catch (error) {
       console.error('AI Portfolio Analysis error:', error);
       return res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to generate portfolio analysis',
+        message: error instanceof Error ? error.message : 'Failed to create analysis job',
+      });
+    }
+  });
+
+  // Job status polling endpoint
+  app.get('/api/ai/job/:jobId', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const { jobId } = req.params;
+      const job = getJob(jobId, req.user.id);
+
+      if (!job) {
+        return res.status(404).json({ success: false, message: 'Job not found' });
+      }
+
+      // Return job status and result if completed
+      const response: any = {
+        success: true,
+        jobId: job.id,
+        status: job.status,
+        createdAt: job.createdAt.toISOString(),
+      };
+
+      if (job.status === 'completed') {
+        response.analysis = job.result;
+        response.completedAt = job.completedAt?.toISOString();
+      } else if (job.status === 'failed') {
+        response.error = job.error;
+        response.completedAt = job.completedAt?.toISOString();
+      }
+
+      return res.json(response);
+    } catch (error) {
+      console.error('Job status check error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to check job status',
       });
     }
   });

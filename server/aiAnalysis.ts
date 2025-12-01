@@ -1,10 +1,86 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { randomUUID } from "crypto";
 
 // Using Replit's AI Integrations service for Anthropic access
 const anthropic = new Anthropic({
   apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  timeout: 180000, // 3 minute timeout for API calls
 });
+
+// Job status types
+export type JobStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface AnalysisJob {
+  id: string;
+  userId: string;
+  status: JobStatus;
+  createdAt: Date;
+  completedAt?: Date;
+  result?: string;
+  error?: string;
+}
+
+// In-memory job storage with automatic cleanup
+const jobs = new Map<string, AnalysisJob>();
+
+// Clean up old jobs every 5 minutes (keep jobs for 30 minutes max)
+const JOB_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, job] of jobs.entries()) {
+    if (now - job.createdAt.getTime() > JOB_EXPIRY_MS) {
+      jobs.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
+
+export function createJob(userId: string): AnalysisJob {
+  const job: AnalysisJob = {
+    id: randomUUID(),
+    userId,
+    status: 'queued',
+    createdAt: new Date(),
+  };
+  jobs.set(job.id, job);
+  return job;
+}
+
+export function getJob(jobId: string, userId: string): AnalysisJob | null {
+  const job = jobs.get(jobId);
+  if (!job || job.userId !== userId) {
+    return null;
+  }
+  return job;
+}
+
+export function updateJobStatus(jobId: string, status: JobStatus, result?: string, error?: string) {
+  const job = jobs.get(jobId);
+  if (job) {
+    job.status = status;
+    if (result) job.result = result;
+    if (error) job.error = error;
+    if (status === 'completed' || status === 'failed') {
+      job.completedAt = new Date();
+    }
+  }
+}
+
+// Process an analysis job asynchronously (fire-and-forget from the route handler)
+export async function processAnalysisJob(jobId: string, input: PortfolioAnalysisInput): Promise<void> {
+  updateJobStatus(jobId, 'running');
+  
+  try {
+    console.log(`[AI Analysis] Job ${jobId} started processing`);
+    const result = await generatePortfolioAnalysis(input);
+    updateJobStatus(jobId, 'completed', result);
+    console.log(`[AI Analysis] Job ${jobId} completed successfully`);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error(`[AI Analysis] Job ${jobId} failed:`, errorMessage);
+    updateJobStatus(jobId, 'failed', undefined, errorMessage);
+  }
+}
 
 export interface PositionForAnalysis {
   id: string;
