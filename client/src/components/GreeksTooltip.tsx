@@ -171,7 +171,7 @@ export function PositionGreeksTooltip({
           </div>
 
           <div className="border-t pt-2 mt-2 text-[10px] text-muted-foreground">
-            <p>Delta/Theta/Vega in dollars. Gamma = delta change per $1.</p>
+            <p>Delta = $ P/L per $1 underlying move. Theta = daily decay. Gamma = delta change per $1. Vega = $ per 1% IV.</p>
           </div>
         </div>
       </TooltipContent>

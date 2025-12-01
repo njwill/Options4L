@@ -210,7 +210,7 @@ function formatPositionsForPrompt(input: PortfolioAnalysisInput): string {
         }
       }
       
-      // Position-level Greeks
+      // Position-level Greeks (already in share-equivalent units: delta × 100 × quantity × sign)
       if (pos.liveData?.positionGreeks) {
         hasGreeksData = true;
         const pg = pos.liveData.positionGreeks;
@@ -218,19 +218,21 @@ function formatPositionsForPrompt(input: PortfolioAnalysisInput): string {
         totalGamma += pg.totalGamma;
         totalTheta += pg.totalTheta;
         totalVega += pg.totalVega;
-        lines.push(`- Position Greeks: Δ=${pg.totalDelta.toFixed(2)}, Γ=${pg.totalGamma.toFixed(4)}, Θ=${pg.totalTheta.toFixed(2)}/day, V=${pg.totalVega.toFixed(2)}`);
+        const deltaDirection = pg.totalDelta >= 0 ? 'bullish' : 'bearish';
+        lines.push(`- Position Greeks (share-equivalent): Δ=${pg.totalDelta.toFixed(2)} (${deltaDirection}), Γ=${pg.totalGamma.toFixed(4)}, Θ=$${pg.totalTheta.toFixed(2)}/day, V=$${pg.totalVega.toFixed(2)}`);
       }
       
       lines.push("");
     }
     
     // Portfolio-level aggregate Greeks
+    // Note: All position-level Greeks are already in share-equivalent units (multiplied by 100 × quantity × sign)
     if (hasGreeksData) {
-      lines.push("## Portfolio Aggregate Greeks");
-      lines.push(`- Total Delta: ${totalDelta.toFixed(2)} (equivalent to ${Math.abs(totalDelta * 100).toFixed(0)} shares ${totalDelta >= 0 ? 'long' : 'short'})`);
-      lines.push(`- Total Gamma: ${totalGamma.toFixed(4)}`);
-      lines.push(`- Total Theta: $${totalTheta.toFixed(2)}/day`);
-      lines.push(`- Total Vega: $${totalVega.toFixed(2)} per 1% IV change`);
+      lines.push("## Portfolio Aggregate Greeks (Share-Equivalent Units)");
+      lines.push(`- Total Delta: ${totalDelta.toFixed(2)} shares (${totalDelta >= 0 ? 'bullish' : 'bearish'} - a $1 move in underlyings results in ~$${Math.abs(totalDelta).toFixed(0)} P/L)`);
+      lines.push(`- Total Gamma: ${totalGamma.toFixed(4)} (delta change per $1 underlying move)`);
+      lines.push(`- Total Theta: $${totalTheta.toFixed(2)}/day (positive = earning from decay, negative = paying decay)`);
+      lines.push(`- Total Vega: $${totalVega.toFixed(2)} (P/L per 1% IV change)`);
       lines.push("");
     }
   }
@@ -254,13 +256,20 @@ export async function generatePortfolioAnalysis(input: PortfolioAnalysisInput): 
   
   const systemPrompt = `You are an expert options trading analyst providing portfolio analysis. Your role is to analyze the trader's current positions and provide actionable insights.
 
+IMPORTANT - Understanding the Greeks data:
+- Position-level and Portfolio-level Greeks are in SHARE-EQUIVALENT units (already multiplied by 100 × quantity × sign)
+- A delta of -1476 means exposure equivalent to being short ~1,476 shares (NOT 147,600)
+- Per-leg Greeks (shown with individual legs) are RAW per-contract values (e.g., delta = 0.09)
+- Positive delta = bullish (profits when underlying rises), Negative delta = bearish (profits when underlying falls)
+- Theta sign convention: POSITIVE theta = earning from time decay (short/sold options), NEGATIVE theta = losing to time decay (long/bought options)
+
 When analyzing, focus on:
-1. Overall portfolio risk assessment (directional bias, volatility exposure)
-2. Greek exposure analysis (delta, theta, vega) and what it means for the portfolio
+1. Overall portfolio risk assessment (directional bias based on delta, volatility exposure based on vega)
+2. Greek exposure analysis - interpret delta in share-equivalent terms (delta of -500 = short 500 share exposure)
 3. Position-specific observations (positions near expiration, ITM/OTM status, potential assignment risk)
 4. Concentration risk (too much exposure to one underlying?)
-5. Theta decay implications (is the portfolio benefiting from or hurt by time decay?)
-6. Volatility exposure (is the portfolio long or short volatility?)
+5. Theta decay implications (positive portfolio theta = net premium seller benefiting from decay)
+6. Volatility exposure (positive vega = long volatility, negative vega = short volatility)
 7. Suggestions for portfolio management or hedging if appropriate
 
 Be concise but thorough. Use specific numbers from the data. Format your response with clear sections using markdown headers. Do not include disclaimers about not being financial advice - the user understands this is analytical guidance only.`;
