@@ -237,7 +237,11 @@ export function calculateGreeks(input: GreeksInput): GreeksResult | null {
     const priceDiff = marketPrice - theoreticalPrice;
     const priceDiffPercent = theoreticalPrice > 0 ? (priceDiff / theoreticalPrice) * 100 : 0;
 
-    const thetaPerDay = -option.theta / 365;
+    // Black-Scholes theta is already negative for long options (lose value over time)
+    // Just convert from annual to daily - no sign flip needed
+    // Long option theta: negative (paying decay)
+    // Short option: signed quantity flips it to positive (earning decay)
+    const thetaPerDay = option.theta / 365;
 
     return {
       delta: option.delta,
@@ -305,7 +309,7 @@ export function getGreekExplanation(greek: string): string {
 export function calculatePositionGreeks(
   legs: Array<{
     greeks: GreeksResult;
-    quantity: number;
+    quantity: number; // Already signed: negative for short (STO/STC), positive for long (BTO/BTC)
     transCode: string;
   }>
 ): {
@@ -320,14 +324,19 @@ export function calculatePositionGreeks(
   let totalVega = 0;
 
   legs.forEach(leg => {
+    // Quantity is already signed (negative for short positions, positive for long)
+    // Multiply by 100 to convert per-contract to share-equivalent units
     const multiplier = leg.quantity * 100;
-    const isShort = leg.transCode === 'STO' || leg.transCode === 'STC';
-    const sign = isShort ? -1 : 1;
 
-    totalDelta += leg.greeks.delta * multiplier * sign;
-    totalGamma += leg.greeks.gamma * multiplier * sign;
-    totalTheta += leg.greeks.theta * multiplier * sign;
-    totalVega += leg.greeks.vega * multiplier * sign;
+    // No additional sign flip needed - quantity already handles long/short orientation
+    // Short put: negative quantity × negative delta = positive total delta (bullish) ✓
+    // Long put: positive quantity × negative delta = negative total delta (bearish) ✓
+    // Short call: negative quantity × positive delta = negative total delta (bearish) ✓
+    // Long call: positive quantity × positive delta = positive total delta (bullish) ✓
+    totalDelta += leg.greeks.delta * multiplier;
+    totalGamma += leg.greeks.gamma * multiplier;
+    totalTheta += leg.greeks.theta * multiplier;
+    totalVega += leg.greeks.vega * multiplier;
   });
 
   return { totalDelta, totalGamma, totalTheta, totalVega };
