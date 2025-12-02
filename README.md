@@ -28,6 +28,15 @@ Automatically identifies 20+ complex options strategies including:
 - **Live P/L** updates on open positions
 - Works automatically for authenticated users
 
+### AI Portfolio Analysis
+- **Powered by Claude Sonnet 4.5** via Replit AI Integrations
+- **Comprehensive risk assessment** with portfolio-level Greeks exposure
+- **Position-specific observations** for open and recently closed positions
+- **Theta/time decay analysis** and volatility exposure insights
+- **Actionable recommendations** for portfolio management
+- **Analysis caching** - previously generated reports persist across sessions
+- Requires authentication; enhanced with live pricing data when available
+
 ### Performance Analytics
 - **Dashboard metrics**: Total P/L, Win Rate, Open Positions, Realized P/L
 - **P/L Over Time**: Dual-line chart showing realized vs total P/L trends
@@ -73,6 +82,7 @@ Automatically identifies 20+ complex options strategies including:
 - **PapaParse** for CSV parsing, **XLSX** for Excel
 - **JWT** authentication with secure cookies
 - **Nodemailer** for magic link emails
+- **Anthropic Claude Sonnet 4.5** for AI portfolio analysis
 
 ## Getting Started
 
@@ -139,6 +149,7 @@ npm run dev
 - Access live market data and Greeks
 - Create custom tags to organize positions
 - Reclassify strategies when auto-detection needs adjustment
+- Get AI-powered portfolio analysis with actionable insights
 
 ## License
 
