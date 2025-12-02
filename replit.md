@@ -52,6 +52,7 @@ Preferred communication style: Simple, everyday language.
 **File Processing:** `papaparse` (CSV), `xlsx` (Excel).
 **Frontend UI:** `@radix-ui/*` (component primitives), `@tanstack/react-query` (server state), `react-hook-form` (form validation), `date-fns` (date utilities), `lucide-react` (icons), `nostr-tools` (NOSTR utilities).
 **Authentication:** `jsonwebtoken` (JWTs), `cookie-parser` (cookies), `nodemailer` (email sending).
+**Admin Notifications:** New user registrations (via email or NOSTR) trigger email notifications to nathan@njwilli.com with user details and registration method.
 **Backend:** `multer` (file uploads), `express` (HTTP server).
 **Build Tools:** `vite`, `esbuild`, `tailwindcss`, `typescript`.
 
