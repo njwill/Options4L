@@ -19,7 +19,7 @@ export default function PrivacyPolicy() {
         <Card data-testid="card-privacy-policy">
           <CardHeader>
             <CardTitle className="text-3xl">Privacy Policy</CardTitle>
-            <p className="text-sm text-muted-foreground">Last updated: November 28, 2025</p>
+            <p className="text-sm text-muted-foreground">Last updated: December 2, 2025</p>
           </CardHeader>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none space-y-6">
             <section>
@@ -92,6 +92,50 @@ export default function PrivacyPolicy() {
                 <strong>Note:</strong> No personal information, account details, trade quantities, or cost basis is shared with Yahoo Finance—only 
                 the option contract identifiers needed to retrieve current market prices.
               </p>
+
+              <h3 className="text-lg font-medium mt-4 mb-2">Anthropic Claude AI (Portfolio Analysis)</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                For <strong>authenticated users only</strong> who choose to use the AI Portfolio Analysis feature, we send portfolio summary 
+                data to Anthropic's Claude AI. This data is routed through Replit AI Integrations, which acts as an intermediary that manages 
+                API authentication and connection to Anthropic. This feature is optional and only processes data when you explicitly request an analysis.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Data sent to Anthropic (via Replit) includes:</strong>
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+                <li>Aggregated position summaries (underlying symbol, strategy type, expiration date)</li>
+                <li>Calculated Greeks (Delta, Gamma, Theta, Vega) for open positions</li>
+                <li>Profit/loss amounts and percentages</li>
+                <li>Position status (open/closed) and live pricing data when available</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Data NOT sent to Anthropic:</strong>
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+                <li>Your email address or NOSTR public key</li>
+                <li>Raw transaction history or individual trade details</li>
+                <li>Account identifiers or personal information</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Caching and Retention:</strong> AI-generated analysis reports are cached in our database so you can access them 
+                across sessions without re-generating. These cached reports are associated with your account. You can generate a new 
+                analysis at any time to replace the cached version, and all cached reports are permanently deleted when you delete your account.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Third-Party Data Processing:</strong> Your portfolio data passes through two third parties when using this feature:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+                <li><strong>Replit:</strong> Routes API requests and manages authentication. See{' '}
+                  <a href="https://replit.com/site/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    Replit's privacy policy
+                  </a>.
+                </li>
+                <li><strong>Anthropic:</strong> Processes requests and generates AI responses. See{' '}
+                  <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    Anthropic's privacy policy
+                  </a>.
+                </li>
+              </ul>
             </section>
 
             <section>
@@ -121,14 +165,25 @@ export default function PrivacyPolicy() {
             <section>
               <h2 className="text-xl font-semibold mt-6 mb-3">6. Data Sharing</h2>
               <p className="text-muted-foreground leading-relaxed font-medium">
-                We do not sell, rent, or share your personal information or trading data with third parties.
+                We do not sell, rent, or share your personal information or trading data with third parties for marketing or advertising purposes.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                Your trading data is yours. We will never monetize your data, use it for advertising, or share it with financial institutions, 
-                data brokers, or any other third parties.
+                Your trading data is yours. We will never monetize your data, use it for advertising, or share it with financial institutions or data brokers.
               </p>
-              <p className="text-muted-foreground leading-relaxed">
-                The only exception would be if required by law (e.g., valid legal process such as a court order).
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Limited third-party processing:</strong> As described in Section 4, we use third-party services to provide specific features:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+                <li>Yahoo Finance receives option contract identifiers to provide live pricing</li>
+                <li>Anthropic (via Replit) receives aggregated portfolio data to provide AI analysis</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                These services receive only the minimum data necessary to provide their functionality.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>AI Analysis Caching:</strong> Cached AI analysis reports persist in our database until you take action to remove them. 
+                You can regenerate an analysis at any time (which replaces the previous cached version), or delete all your data by deleting 
+                your account through the Account Settings page. We may also disclose data if required by law (e.g., valid legal process such as a court order).
               </p>
             </section>
 

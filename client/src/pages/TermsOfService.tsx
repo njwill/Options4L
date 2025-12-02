@@ -19,7 +19,7 @@ export default function TermsOfService() {
         <Card data-testid="card-terms-of-service">
           <CardHeader>
             <CardTitle className="text-3xl">Terms of Service</CardTitle>
-            <p className="text-sm text-muted-foreground">Last updated: November 28, 2025</p>
+            <p className="text-sm text-muted-foreground">Last updated: December 2, 2025</p>
           </CardHeader>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none space-y-6">
             <section>
@@ -42,6 +42,7 @@ export default function TermsOfService() {
                 <li>Profit/loss calculations and win rate statistics</li>
                 <li>Live options pricing via Yahoo Finance (for open positions)</li>
                 <li>Options Greeks calculations (Delta, Gamma, Theta, Vega) using Black-Scholes model</li>
+                <li>AI-powered portfolio analysis using Claude Sonnet 4.5 (for authenticated users)</li>
                 <li>Manual position grouping for custom strategy analysis</li>
                 <li>Data visualization and charts</li>
                 <li>Transaction commenting and notes</li>
@@ -108,8 +109,37 @@ export default function TermsOfService() {
               </p>
             </section>
 
+            <section className="bg-muted/50 p-4 rounded-lg border">
+              <h2 className="text-xl font-semibold mb-3 text-destructive">6. AI Portfolio Analysis Disclaimer</h2>
+              <p className="text-muted-foreground leading-relaxed">
+                The Service offers AI-powered portfolio analysis using Anthropic's Claude Sonnet 4.5 model (via Replit AI Integrations). 
+                This feature is available to authenticated users and provides AI-generated insights about your portfolio.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Important limitations:</strong>
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-muted-foreground mt-2">
+                <li>AI-generated content may be inaccurate, incomplete, or misleading</li>
+                <li>The AI does not have access to real-time market conditions or your complete financial situation</li>
+                <li>Analysis is based on the data you provide and may not reflect your actual portfolio accurately</li>
+                <li>Recommendations are general observations, not personalized financial advice</li>
+                <li>The AI model is provided by third parties (Anthropic/Replit) outside our control</li>
+                <li>Analysis may take 30-90 seconds or longer to generate; service availability is not guaranteed</li>
+                <li>Previously generated analyses are cached and may not reflect current market conditions</li>
+              </ul>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>Third-Party Dependencies:</strong> This feature relies on services provided by Anthropic and Replit. 
+                Your use of AI analysis is subject to their respective terms of service. We may suspend or modify this feature 
+                at any time if third-party services become unavailable, change their policies, or restrict access. We are not 
+                responsible for any changes, outages, or limitations imposed by these third-party providers.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-2">
+                <strong>AI-generated analysis is not a substitute for professional financial advice. Always consult with qualified financial advisors before making investment decisions.</strong>
+              </p>
+            </section>
+
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">6. User Responsibilities</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">7. User Responsibilities</h2>
               <p className="text-muted-foreground leading-relaxed">By using the Service, you agree to:</p>
               <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
                 <li>Provide accurate and complete data when uploading trading history</li>
@@ -122,7 +152,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">7. User Content and Data</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">8. User Content and Data</h2>
               
               <h3 className="text-lg font-medium mt-4 mb-2">Your Data Ownership</h3>
               <p className="text-muted-foreground leading-relaxed">
@@ -143,7 +173,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">8. Accuracy of Analysis</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">9. Accuracy of Analysis</h2>
               <p className="text-muted-foreground leading-relaxed">
                 While we strive to provide accurate analysis, the Service may contain errors, bugs, or inaccuracies. 
                 The calculations, strategy classifications, and statistics provided are estimates based on the data you upload and our analysis algorithms.
@@ -154,7 +184,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">9. Limitation of Liability</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">10. Limitation of Liability</h2>
               <p className="text-muted-foreground leading-relaxed">
                 TO THE MAXIMUM EXTENT PERMITTED BY LAW:
               </p>
@@ -168,7 +198,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">10. Indemnification</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">11. Indemnification</h2>
               <p className="text-muted-foreground leading-relaxed">
                 You agree to indemnify and hold harmless Options4L and its operators from any claims, damages, or expenses 
                 arising from your use of the Service, your violation of these Terms, or your violation of any rights of another party.
@@ -176,7 +206,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">11. Service Availability</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">12. Service Availability</h2>
               <p className="text-muted-foreground leading-relaxed">
                 We do not guarantee that the Service will be available at all times. We may modify, suspend, or discontinue 
                 the Service at any time without notice. We are not liable for any modification, suspension, or discontinuation of the Service.
@@ -184,7 +214,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">12. Account Termination</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">13. Account Termination</h2>
               <p className="text-muted-foreground leading-relaxed">
                 You may delete your account at any time through the Account Settings page. 
                 We reserve the right to suspend or terminate accounts that violate these Terms or for any other reason at our discretion.
@@ -192,7 +222,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">13. Open Source License</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">14. Open Source License</h2>
               <p className="text-muted-foreground leading-relaxed">
                 Options4L is open source software released under the MIT License. The source code is available at{' '}
                 <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
@@ -205,7 +235,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">14. Changes to Terms</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">15. Changes to Terms</h2>
               <p className="text-muted-foreground leading-relaxed">
                 We may modify these Terms at any time. We will notify users of material changes by updating the "Last updated" date. 
                 Continued use of the Service after changes constitutes acceptance of the modified Terms.
@@ -213,7 +243,7 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">15. Governing Law</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">16. Governing Law</h2>
               <p className="text-muted-foreground leading-relaxed">
                 These Terms shall be governed by and construed in accordance with the laws of the United States, 
                 without regard to conflict of law principles.
@@ -221,14 +251,14 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">16. Severability</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">17. Severability</h2>
               <p className="text-muted-foreground leading-relaxed">
                 If any provision of these Terms is found to be unenforceable, the remaining provisions will continue in full force and effect.
               </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">17. Contact</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">18. Contact</h2>
               <p className="text-muted-foreground leading-relaxed">
                 If you have questions about these Terms, please open an issue on our{' '}
                 <a href="https://github.com/njwill/Options4L/issues" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
