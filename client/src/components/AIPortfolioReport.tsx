@@ -6,10 +6,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { usePriceCache, calculateLivePositionPL } from '@/hooks/use-price-cache';
 import { calculateGreeks, calculatePositionGreeks, type GreeksResult } from '@/lib/blackScholes';
 import { useAuth } from '@/hooks/use-auth';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import type { Position, StockHolding } from '@shared/schema';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { 
   Sparkles, 
   RefreshCw, 
@@ -19,7 +19,8 @@ import {
   Brain,
   TrendingUp,
   BarChart3,
-  Loader2
+  Loader2,
+  History
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -54,6 +55,13 @@ interface JobStatusResponse {
   completedAt?: string;
 }
 
+interface CachedAnalysisResponse {
+  success: boolean;
+  hasCachedAnalysis: boolean;
+  analysis: string | null;
+  generatedAt: string | null;
+}
+
 type PollingState = 'idle' | 'polling' | 'completed' | 'failed';
 
 export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AIPortfolioReportProps) {
@@ -77,6 +85,26 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
   const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
 
   const hasLiveData = hasCachedPrices();
+  
+  // Load cached analysis on mount
+  const { data: cachedData, isLoading: isLoadingCached } = useQuery<CachedAnalysisResponse>({
+    queryKey: ['/api/ai/cached-analysis'],
+    enabled: isAuthenticated,
+    staleTime: Infinity, // Don't refetch automatically - only refresh when user regenerates
+    refetchOnWindowFocus: false,
+  });
+  
+  // Initialize report from cache when data loads
+  useEffect(() => {
+    if (cachedData?.hasCachedAnalysis && cachedData.analysis && !report) {
+      setReport(cachedData.analysis);
+      setReportMeta({
+        openPositionsAnalyzed: openPositions.length,
+        closedPositionsAnalyzed: Math.min(closedPositions.length, 10),
+        generatedAt: cachedData.generatedAt || new Date().toISOString(),
+      });
+    }
+  }, [cachedData, report, openPositions.length, closedPositions.length]);
   
   // Cleanup polling on unmount
   useEffect(() => {
@@ -479,10 +507,17 @@ export function AIPortfolioReport({ positions, summary, stockHoldings = [] }: AI
               
               {reportMeta && (
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {format(new Date(reportMeta.generatedAt), 'MMM d, h:mm a')}
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex items-center gap-1 cursor-help">
+                        <History className="w-3 h-3" />
+                        {formatDistanceToNow(new Date(reportMeta.generatedAt), { addSuffix: true })}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Generated {format(new Date(reportMeta.generatedAt), 'MMM d, yyyy h:mm a')}</p>
+                    </TooltipContent>
+                  </Tooltip>
                   <span>
                     {reportMeta.openPositionsAnalyzed} open, {reportMeta.closedPositionsAnalyzed} closed analyzed
                   </span>

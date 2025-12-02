@@ -495,3 +495,14 @@ export const removePositionTagSchema = z.object({
 
 export type AddPositionTagInput = z.infer<typeof addPositionTagSchema>;
 export type RemovePositionTagInput = z.infer<typeof removePositionTagSchema>;
+
+// AI Analysis Cache table - stores cached AI portfolio analysis reports
+export const aiAnalysisCache = pgTable("ai_analysis_cache", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  analysis: text("analysis").notNull(),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+});
+
+export type AiAnalysisCache = typeof aiAnalysisCache.$inferSelect;
+export type InsertAiAnalysisCache = typeof aiAnalysisCache.$inferInsert;

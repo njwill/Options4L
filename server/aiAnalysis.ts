@@ -68,7 +68,12 @@ export function updateJobStatus(jobId: string, status: JobStatus, result?: strin
 }
 
 // Process an analysis job asynchronously (fire-and-forget from the route handler)
-export async function processAnalysisJob(jobId: string, input: PortfolioAnalysisInput): Promise<void> {
+// onComplete callback is called with the result for caching
+export async function processAnalysisJob(
+  jobId: string, 
+  input: PortfolioAnalysisInput,
+  onComplete?: (result: string) => Promise<void>
+): Promise<void> {
   updateJobStatus(jobId, 'running');
   
   try {
@@ -76,6 +81,17 @@ export async function processAnalysisJob(jobId: string, input: PortfolioAnalysis
     const result = await generatePortfolioAnalysis(input);
     updateJobStatus(jobId, 'completed', result);
     console.log(`[AI Analysis] Job ${jobId} completed successfully`);
+    
+    // Call the onComplete callback to save to cache
+    if (onComplete) {
+      try {
+        await onComplete(result);
+        console.log(`[AI Analysis] Job ${jobId} result cached successfully`);
+      } catch (cacheError) {
+        // Log but don't fail the job if caching fails
+        console.error(`[AI Analysis] Job ${jobId} failed to cache result:`, cacheError);
+      }
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     console.error(`[AI Analysis] Job ${jobId} failed:`, errorMessage);

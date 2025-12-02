@@ -47,6 +47,8 @@ import {
   removeTagFromPosition,
   getTagsForPosition,
   getTagsForPositions,
+  getAiAnalysisCache,
+  saveAiAnalysisCache,
 } from "./storage";
 import { 
   insertCommentSchema, 
@@ -2084,9 +2086,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Create job and return immediately
       const job = createJob(req.user.id);
+      const userId = req.user.id;
       
-      // Start processing in background (fire-and-forget)
-      processAnalysisJob(job.id, analysisInput).catch(err => {
+      // Start processing in background with cache callback (fire-and-forget)
+      processAnalysisJob(job.id, analysisInput, async (result: string) => {
+        // Save to cache immediately upon completion
+        await saveAiAnalysisCache(userId, result);
+      }).catch(err => {
         console.error(`[AI Analysis] Background processing failed for job ${job.id}:`, err);
       });
 
@@ -2142,6 +2148,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to check job status',
+      });
+    }
+  });
+
+  // Get cached AI analysis
+  app.get('/api/ai/cached-analysis', async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const cached = await getAiAnalysisCache(req.user.id);
+      
+      if (!cached) {
+        return res.json({ 
+          success: true, 
+          hasCachedAnalysis: false,
+          analysis: null,
+          generatedAt: null,
+        });
+      }
+
+      return res.json({
+        success: true,
+        hasCachedAnalysis: true,
+        analysis: cached.analysis,
+        generatedAt: cached.generatedAt.toISOString(),
+      });
+    } catch (error) {
+      console.error('Get cached analysis error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to get cached analysis',
       });
     }
   });

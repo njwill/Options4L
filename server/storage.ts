@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { db } from './db';
-import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, strategyOverrides, users, emailVerificationTokens, tags, positionTags, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type StrategyOverride, type User, type EmailVerificationToken, type Tag, type PositionTag } from '@shared/schema';
+import { dbTransactions, uploads, comments, positionComments, manualPositionGroupings, strategyOverrides, users, emailVerificationTokens, tags, positionTags, aiAnalysisCache, type DbTransaction, type Comment, type PositionComment, type ManualPositionGrouping, type StrategyOverride, type User, type EmailVerificationToken, type Tag, type PositionTag, type AiAnalysisCache } from '@shared/schema';
 import { eq, and, count, asc, desc, sql, max, inArray, lt } from 'drizzle-orm';
 import type { Transaction, RawTransaction } from '@shared/schema';
 
@@ -1420,4 +1420,56 @@ export async function getTagsForPositions(
     });
   }
   return result;
+}
+
+// ============================================================================
+// AI Analysis Cache Functions
+// ============================================================================
+
+/**
+ * Get cached AI analysis for a user
+ */
+export async function getAiAnalysisCache(userId: string): Promise<AiAnalysisCache | null> {
+  const results = await db
+    .select()
+    .from(aiAnalysisCache)
+    .where(eq(aiAnalysisCache.userId, userId))
+    .limit(1);
+  
+  return results[0] || null;
+}
+
+/**
+ * Save or update AI analysis cache for a user
+ */
+export async function saveAiAnalysisCache(userId: string, analysis: string): Promise<AiAnalysisCache> {
+  const now = new Date();
+  
+  // Upsert: insert or update on conflict
+  const result = await db
+    .insert(aiAnalysisCache)
+    .values({
+      userId,
+      analysis,
+      generatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: aiAnalysisCache.userId,
+      set: {
+        analysis,
+        generatedAt: now,
+      },
+    })
+    .returning();
+  
+  return result[0];
+}
+
+/**
+ * Clear AI analysis cache for a user
+ */
+export async function clearAiAnalysisCache(userId: string): Promise<void> {
+  await db
+    .delete(aiAnalysisCache)
+    .where(eq(aiAnalysisCache.userId, userId));
 }
