@@ -787,6 +787,15 @@ export async function findOrCreateUserByEmail(
     })
     .returning();
   
+  // Send new user notification (async, don't await to not block login)
+  import('./emailService').then(({ sendNewUserNotification }) => {
+    sendNewUserNotification({
+      email: newUser.email,
+      displayName: newUser.displayName,
+      registrationMethod: 'email',
+    }).catch(err => console.error('Failed to send new user notification:', err));
+  });
+  
   return newUser;
 }
 

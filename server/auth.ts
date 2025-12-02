@@ -126,6 +126,16 @@ export async function findOrCreateUser(nostrPubkey: string): Promise<AuthUser> {
     .returning();
   
   const newUser = newUsers[0];
+  
+  // Send new user notification (async, don't await to not block login)
+  import('./emailService').then(({ sendNewUserNotification }) => {
+    sendNewUserNotification({
+      nostrPubkey: newUser.nostrPubkey,
+      displayName: newUser.displayName,
+      registrationMethod: 'nostr',
+    }).catch(err => console.error('Failed to send new user notification:', err));
+  });
+  
   return {
     id: newUser.id,
     nostrPubkey: newUser.nostrPubkey,
