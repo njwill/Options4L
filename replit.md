@@ -86,11 +86,37 @@ Preferred communication style: Simple, everyday language.
 **Display Locations:** Open Positions table tooltips, Position Detail panel Greeks section, per-leg Greeks in leg cards.
 **IV Source Indicator:** UI shows "(calc)" next to IV when calculated via Newton-Raphson.
 
+### AI Portfolio Analysis
+
+**Model:** Claude Sonnet 4.5 (via Replit AI Integrations)
+**Features:**
+- Comprehensive portfolio risk assessment with Greeks exposure analysis
+- Position-specific observations for open and recently closed positions
+- Theta/time decay analysis and volatility exposure insights
+- Actionable recommendations for portfolio management
+
+**Async Processing:**
+- Uses async job pattern with 3-second polling to handle 30-90+ second analysis times
+- Jobs submitted via POST `/api/ai/analyze-portfolio`, status polled via GET `/api/ai/job/:jobId`
+- In-memory job storage with 30-minute automatic cleanup
+
+**Analysis Caching:**
+- Completed analyses are cached to PostgreSQL immediately upon job completion
+- Cached analyses persist across sessions, page refreshes, and browser closures
+- Frontend loads cached analysis on component mount via GET `/api/ai/cached-analysis`
+- Cache uses upsert pattern (one cached analysis per user)
+- Displays relative timestamp ("2 hours ago") with tooltip showing exact generation time
+
+**Greeks Interpretation in AI Prompts:**
+- Position-level Greeks are pre-scaled to share-equivalent units (×100 × quantity × sign)
+- Theta sign convention: positive = earning from decay (sold options), negative = paying decay (bought options)
+- Delta expressed as dollar P/L per $1 underlying move
+
 ### Database Configuration
 
 **ORM:** Drizzle ORM with PostgreSQL dialect via `@neondatabase/serverless` driver.
 **Schema:** Defined in `shared/schema.ts`, supporting migrations.
-**Active Usage:** Stores authenticated user data across `users`, `uploads`, `transactions`, `comments`, `positionComments`, `strategy_overrides`, and `email_verification_tokens` tables. Features user-scoped data isolation, composite unique constraints for deduplication, and indexing for performance.
+**Active Usage:** Stores authenticated user data across `users`, `uploads`, `transactions`, `comments`, `positionComments`, `strategy_overrides`, `email_verification_tokens`, and `ai_analysis_cache` tables. Features user-scoped data isolation, composite unique constraints for deduplication, and indexing for performance.
 
 ## Legal Documentation
 
