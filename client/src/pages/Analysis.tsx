@@ -22,6 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { computePositionHash } from '@/lib/positionHash';
 import { AIPortfolioReport } from '@/components/AIPortfolioReport';
+import ChartAnalyzer from '@/pages/ChartAnalyzer';
 import type { Position, RollChain, StockHolding, Tag } from '@shared/schema';
 import { format, differenceInDays } from 'date-fns';
 import { 
@@ -44,7 +45,7 @@ import {
   Sparkles
 } from 'lucide-react';
 
-type AnalysisType = 'rolls' | 'tags' | 'ai';
+type AnalysisType = 'rolls' | 'tags' | 'ai' | 'chart';
 
 interface AnalysisProps {
   positions: Position[];
@@ -661,6 +662,12 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
                 <span className="flex items-center gap-1.5">
                   <Sparkles className="w-3 h-3" />
                   AI Report
+                </span>
+              </SelectItem>
+              <SelectItem value="chart">
+                <span className="flex items-center gap-1.5">
+                  <BarChart3 className="w-3 h-3" />
+                  Chart Analyzer
                 </span>
               </SelectItem>
             </SelectContent>
@@ -1829,6 +1836,10 @@ export default function Analysis({ positions, rollChains, stockHoldings = [] }: 
           }}
           stockHoldings={stockHoldings}
         />
+      )}
+
+      {analysisType === 'chart' && (
+        <ChartAnalyzer />
       )}
     </div>
   );
