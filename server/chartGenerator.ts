@@ -1,6 +1,8 @@
 import { ChartJSNodeCanvas } from 'chartjs-node-canvas';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 import type { ChartConfiguration } from 'chart.js';
+
+const yahooFinance = new YahooFinance();
 
 interface YahooQuote {
   date: Date;
