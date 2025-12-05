@@ -719,7 +719,7 @@ function AppContent() {
             </div>
 
             {/* Tabs */}
-            {(positions.length > 0 || user) && (
+            {positions.length > 0 && (
               <div className="max-w-7xl mx-auto px-4">
                 <div className="flex gap-1 overflow-x-auto">
                   {tabs.map((tab) => (

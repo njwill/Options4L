@@ -124,36 +124,3 @@ Preferred communication style: Simple, everyday language.
 **Privacy Policy:** Available at `/privacy`. Covers data collection practices (NOSTR pubkey, email, trading data), storage policies, security measures, no data selling commitment, user rights (access, export, deletion), and open-source transparency.
 
 **Terms of Service:** Available at `/terms`. Includes critical financial disclaimers (not financial advice, educational purposes only), service description, user responsibilities, limitation of liability, and MIT license reference.
-
-### Chart Analyzer Feature
-
-**Location:** Analysis page > Chart Analyzer tab (available to authenticated users)
-**Model:** Claude Sonnet 4.5 vision (via Replit AI Integrations)
-
-**Input Modes:**
-- **Upload:** Drag-and-drop, file picker, or clipboard paste for chart images (PNG, JPG, WebP)
-- **Generate:** Enter ticker symbol + timeframe (1D, 5D, 1M, 3M, 6M, 1Y) to generate charts with technical indicators
-
-**Chart Generation:**
-- Uses Yahoo Finance for historical price data via `yahoo-finance2` library
-- Server-side chart rendering with `chartjs-node-canvas` and Chart.js
-- Includes EMA 9/21, Bollinger Bands, VWAP, and price/volume data
-
-**AI Analysis Output:**
-- Overall bias (bullish/bearish/neutral) with strength rating
-- Technical indicators assessment (trend, momentum, volatility, volume)
-- Pattern recognition (chart patterns, divergences)
-- Support/resistance level identification
-- 2-4 probability-weighted trading scenarios with entry, target, stop-loss
-- Key observations and risk factors
-
-**Async Processing:**
-- Uses job pattern with 3-second polling (analysis takes 30-60 seconds)
-- Jobs submitted via POST `/api/chart/analyze`, status polled via GET `/api/chart/job/:jobId`
-- In-memory job storage with 30-minute cleanup
-
-**Files:**
-- `server/chartGenerator.ts`: Yahoo Finance data fetching, technical indicator calculation, Chart.js rendering
-- `server/chartAnalysis.ts`: Claude vision analysis, prompt engineering, job management
-- `client/src/pages/ChartAnalyzer.tsx`: Upload/generate modes, analysis display
-- `client/src/components/ChartAnalysisDisplay.tsx`: Structured analysis result rendering
