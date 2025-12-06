@@ -152,7 +152,6 @@ This is proprietary software. All rights reserved. See the [LICENSE](LICENSE) fi
 ## Links
 
 - **Live App**: [tool.options4l.com](https://tool.options4l.com)
-- **Contact**: nathan@njwilli.com
 
 ---
 
