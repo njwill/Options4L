@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Key, RefreshCw, X } from 'lucide-react';
+import logoUrl from '@assets/Options4L_Logo_1765019627827.png';
 import { Route, Switch, useLocation, useSearch } from 'wouter';
 import { format } from 'date-fns';
 import Dashboard from '@/pages/Dashboard';
@@ -641,8 +642,12 @@ function AppContent() {
                 className="text-left cursor-pointer hover-elevate rounded-md px-2 py-1 -mx-2 -my-1"
                 data-testid="link-home"
               >
-                <h1 className="text-xl font-semibold">Robinhood Options Analysis</h1>
-                <p className="text-xs text-muted-foreground">Track strategies, rolls, and P/L</p>
+                <img 
+                  src={logoUrl} 
+                  alt="Options4L" 
+                  className="h-8"
+                  data-testid="img-logo"
+                />
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" asChild data-testid="link-instructions">
