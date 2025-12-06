@@ -29,10 +29,7 @@ export default function PrivacyPolicy() {
                 This Privacy Policy explains how we collect, use, and protect your information when you use our service.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                Options4L is an open-source project licensed under the MIT License. The source code is publicly available at{' '}
-                <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                  github.com/njwill/Options4L
-                </a>.
+                Options4L is proprietary software. All rights are reserved.
               </p>
             </section>
 
@@ -243,22 +240,9 @@ export default function PrivacyPolicy() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">12. Open Source</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">12. Contact</h2>
               <p className="text-muted-foreground leading-relaxed">
-                Options4L is open source software. You can review exactly how your data is handled by examining the source code at{' '}
-                <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                  github.com/njwill/Options4L
-                </a>.
-              </p>
-            </section>
-
-            <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">13. Contact</h2>
-              <p className="text-muted-foreground leading-relaxed">
-                If you have questions about this Privacy Policy or your data, please open an issue on our{' '}
-                <a href="https://github.com/njwill/Options4L/issues" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                  GitHub repository
-                </a>.
+                If you have questions about this Privacy Policy or your data, please contact us at nathan@njwilli.com.
               </p>
             </section>
           </CardContent>
@@ -266,10 +250,6 @@ export default function PrivacyPolicy() {
 
         <div className="text-center text-sm text-muted-foreground pb-8">
           <Link href="/terms" className="hover:underline">Terms of Service</Link>
-          {' · '}
-          <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="hover:underline">
-            GitHub
-          </a>
         </div>
       </div>
     </div>

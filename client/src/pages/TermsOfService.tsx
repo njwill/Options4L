@@ -222,15 +222,13 @@ export default function TermsOfService() {
             </section>
 
             <section>
-              <h2 className="text-xl font-semibold mt-6 mb-3">14. Open Source License</h2>
+              <h2 className="text-xl font-semibold mt-6 mb-3">14. Proprietary Software</h2>
               <p className="text-muted-foreground leading-relaxed">
-                Options4L is open source software released under the MIT License. The source code is available at{' '}
-                <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                  github.com/njwill/Options4L
-                </a>.
+                Options4L is proprietary software. All rights are reserved by the copyright holder. 
+                The source code may not be copied, modified, distributed, or used without prior written permission.
               </p>
               <p className="text-muted-foreground leading-relaxed mt-2">
-                The MIT License applies to the software itself. These Terms of Service govern your use of the hosted service at tool.options4l.com.
+                These Terms of Service govern your use of the hosted service at tool.options4l.com.
               </p>
             </section>
 
@@ -260,10 +258,7 @@ export default function TermsOfService() {
             <section>
               <h2 className="text-xl font-semibold mt-6 mb-3">18. Contact</h2>
               <p className="text-muted-foreground leading-relaxed">
-                If you have questions about these Terms, please open an issue on our{' '}
-                <a href="https://github.com/njwill/Options4L/issues" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                  GitHub repository
-                </a>.
+                If you have questions about these Terms, please contact us at nathan@njwilli.com.
               </p>
             </section>
           </CardContent>
@@ -271,10 +266,6 @@ export default function TermsOfService() {
 
         <div className="text-center text-sm text-muted-foreground pb-8">
           <Link href="/privacy" className="hover:underline">Privacy Policy</Link>
-          {' · '}
-          <a href="https://github.com/njwill/Options4L" target="_blank" rel="noopener noreferrer" className="hover:underline">
-            GitHub
-          </a>
         </div>
       </div>
     </div>

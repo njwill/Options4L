@@ -121,6 +121,6 @@ Preferred communication style: Simple, everyday language.
 
 ## Legal Documentation
 
-**Privacy Policy:** Available at `/privacy`. Covers data collection practices (NOSTR pubkey, email, trading data), storage policies, security measures, no data selling commitment, user rights (access, export, deletion), and open-source transparency.
+**Privacy Policy:** Available at `/privacy`. Covers data collection practices (NOSTR pubkey, email, trading data), storage policies, security measures, no data selling commitment, and user rights (access, export, deletion).
 
-**Terms of Service:** Available at `/terms`. Includes critical financial disclaimers (not financial advice, educational purposes only), service description, user responsibilities, limitation of liability, and MIT license reference.
+**Terms of Service:** Available at `/terms`. Includes critical financial disclaimers (not financial advice, educational purposes only), service description, user responsibilities, limitation of liability, and proprietary software notice.

@@ -805,15 +805,6 @@ function AppContent() {
                 <a href="/terms" className="hover:text-foreground hover:underline" data-testid="link-terms">
                   Terms of Service
                 </a>
-                <span>·</span>
-                <a 
-                  href="https://github.com/njwill/Options4L" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="hover:text-foreground hover:underline"
-                >
-                  GitHub
-                </a>
               </div>
             </div>
           </footer>

@@ -92,18 +92,12 @@ Automatically identifies 20+ complex options strategies including:
 
 ### Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/njwill/Options4L.git
-cd Options4L
-```
-
-2. Install dependencies:
+1. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Set up environment variables (for full features):
+2. Set up environment variables (for full features):
 ```bash
 DATABASE_URL=your_postgres_connection_string
 SESSION_SECRET=your_session_secret
@@ -113,17 +107,17 @@ SMTP_PASS=your_smtp_password
 SMTP_FROM=noreply@yourdomain.com
 ```
 
-4. Push database schema:
+3. Push database schema:
 ```bash
 npm run db:push
 ```
 
-5. Start the development server:
+4. Start the development server:
 ```bash
 npm run dev
 ```
 
-6. Open your browser to `http://localhost:5000`
+5. Open your browser to `http://localhost:5000`
 
 ## Usage
 
@@ -153,13 +147,12 @@ npm run dev
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This is proprietary software. All rights reserved. See the [LICENSE](LICENSE) file for details.
 
 ## Links
 
 - **Live App**: [tool.options4l.com](https://tool.options4l.com)
-- **Repository**: [github.com/njwill/Options4L](https://github.com/njwill/Options4L)
-- **Issues**: [Report bugs or request features](https://github.com/njwill/Options4L/issues)
+- **Contact**: nathan@njwilli.com
 
 ---
 
